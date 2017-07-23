@@ -83,27 +83,100 @@ ChEx.dateFormat = function (date, format) {
 };
 
 /** DOMの出現を待つ。１秒ずつmax回試行。見つかったらnextを実行 */
-ChEx.waitDom = function(selector, label, max, next) {
+ChEx.waitDom = function(selector, label, max, next, _count) {
     let $item = $(selector); //毎回取り直す必要あり
     if ($item.length) {
         next($item);
-    } else if (max) {
-        setTimeout(function () {
-            ChEx.waitDom(selector, label, max - 1, next);
-        }, 1000);
     } else {
-        ChEx.error(`${max} 秒待ちましたが ${selector} (${label}) が見つかりませんでした。`);
+        _count = (_count || 0) + 1;
+        if (_count < max) {
+            setTimeout(function () {
+                ChEx.waitDom(selector, label, max, next, _count);
+            }, 1000);
+        } else {
+            ChEx.error(`${max} 秒待ちましたが ${selector} (${label}) が見つかりませんでした。`);
+        }
     }
 };
 
-/** リンクが一致したらcallbackを実行。* は .*? として扱われ、(*) は callback の引数に中味が渡る */
-ChEx.matchLink = function(condition, callback) {
-    let url = location.href;
-    condition = condition.replace(/([.?+\/])/g, '\\$1').replace(/\*/g, '.*?');
+/** リンクが一致したらcallbackを実行。* は [\w%+.-]+ として扱われ、(*) は callback の引数に中味が渡る。** とすると .+? として扱われる */
+ChEx.matchUrl = function(condition, callback, _href) {
+    let url = _href || location.href;
+    condition = condition.replace(/([.?+\/])/g, '\\$1').replace(/\*\*/g, '.+?').replace(/\*/g, '[\\w%+.-]+');
     condition = new RegExp(condition);
     url.replace(condition, (hit, a, b, c, d) => {
         callback(a, b, c, d);
     });
+};
+ChEx.matchLink = ChEx.matchUrl; //deprecated
+
+/** URLパラメータをマップの形で取得。hashの値も '#' というキーに入る */
+ChEx.urlParams = function (_url) {
+    _url = _url || location.href;
+    let params = {};
+    _url.replace(/(?:\?([^#]*))?(?:#(.*))?$/, (hit, search, hash) => {
+        if (search) {
+            for (let kv of search.split('&')) {
+                let k_v = kv.split('=');
+                if (k_v.length === 2 && k_v[0]) {
+                    let k = decodeURIComponent(k_v[0]);
+                    let v = decodeURIComponent(k_v[1]);
+                    if (params[k] === undefined) {
+                        params[k] = v;
+                    } else if ($.isArray(params[k])) {
+                        params[k].push(v);
+                    } else {
+                        params[k] = [params[k], v];
+                    }
+                }
+            }
+        }
+        params['#'] = (hash || '');
+    });
+    return params;
+};
+/** マップの形でURLパラメータを渡すとそれに応じたURLを返す */
+ChEx.makeUrl = function (params, _href) {
+    let ary = [];
+    let hash = '';
+    for (let k of Object.keys(params)) {
+        let v = params[k];
+        if (k === '#') {
+            hash = v;
+        } else if ($.isArray(v)) {
+            for (let _v of v) {
+                ary.push(`${encodeURIComponent(k)}=${encodeURIComponent(_v)}`);
+            }
+        } else {
+            ary.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+        }
+    }
+    let url = (_href || location.href).replace(/[?#].*$/, '');
+    if (ary.length) url = `${url}?${ary.join('&')}`;
+    if (hash) url = `${url}#${hash}`;
+    return url;
+};
+
+/** URLパラメータが一致したらcallbackを実行 */
+ChEx.matchUrlParam = function(condition, callback, _href) {
+    let params = ChEx.urlParams(_href);
+    if (condition(params)) {
+        callback(params);
+    }
+};
+
+/** パラメータが指定の値ならcallbackを実行し、パラメータを反転させるリンクを返す */
+ChEx.toggleUrlParamLink = function(paramKey, paramValue, trueCallback, falseCallback, _href) {
+    let params = ChEx.urlParams(_href);
+    if (params[paramKey] === paramValue) {
+        delete params[paramKey];
+        let reverseUrl = ChEx.makeUrl(params, _href);
+        trueCallback(reverseUrl);
+    } else {
+        params[paramKey] = paramValue;
+        let reverseUrl = ChEx.makeUrl(params, _href);
+        falseCallback(reverseUrl);
+    }
 };
 
 /**
@@ -111,8 +184,9 @@ ChEx.matchLink = function(condition, callback) {
  * @param {string} opt.storageKey - 保存につかうキー
  * @param {function} opt.getId - 保存につかうID
  * @param {function|undefined} opt.rewritableIf - (省略可) 書き換え可能にする条件
+ * @param {function|undefined} opt.onChange - (省略可) 書き換えた際に見た目など変えたい場合
  */
-ChEx.rewritableComments = function (opt) {
+ChEx.rewritableTexts = function (opt) {
     //設定済みコメント読み込み
     ChEx.storage.loadLocal(opt.storageKey, {}, texts => {
         opt.$targets.each((i, target) => {
@@ -122,6 +196,7 @@ ChEx.rewritableComments = function (opt) {
             $target.attr('data-chrome-ex-orig', orig);
             if (texts[id]) {
                 $target.text(texts[id]);
+                if (opt.onChange) opt.onChange($target, orig !== texts[id]);
             }
         });
     });
@@ -137,9 +212,11 @@ ChEx.rewritableComments = function (opt) {
         //入力値に書き換え or 空欄なら元の値に戻す
         if (text) {
             $target.text(text);
+            if (opt.onChange) opt.onChange($target, true);
         } else {
             let orig = $target.attr('data-chrome-ex-orig');
             $target.text(orig);
+            if (opt.onChange) opt.onChange($target, false);
         }
         //保存
         let id = opt.getId($target);
@@ -154,11 +231,12 @@ ChEx.rewritableComments = function (opt) {
         }
     });
 };
+ChEx.rewritableComments = ChEx.rewritableTexts; //deprecated
 
 /** ローカルストレージ */
 ChEx.storage = {};
 ChEx.storage.loadLocal = function (key, defaultValue, callback) {
-    if ((typeof defaultValue) === 'function') return this.error('defaultValue is required.');
+    if ((typeof defaultValue) === 'function') return ChEx.error('defaultValue is required.');
     //noinspection JSUnresolvedVariable
     const __local = chrome.storage.local;
     __local.get(key, (data) => {
@@ -178,7 +256,7 @@ ChEx.storage.__saveLocal = function (base, afterSave) {
     }
 };
 ChEx.storage.saveLocal = function (key, defaultValue, callback, afterSave) {
-    if ((typeof defaultValue) === 'function') return this.error('defaultValue is required.');
+    if ((typeof defaultValue) === 'function') return ChEx.error('defaultValue is required.');
     //noinspection JSUnresolvedVariable
     const __local = chrome.storage.local;
     __local.get(key, (base) => {
@@ -194,7 +272,7 @@ ChEx.storage.saveLocal = function (key, defaultValue, callback, afterSave) {
     });
 };
 ChEx.storage.saveLocalDirectly = function (key, data, afterSave) {
-    if (afterSave && (typeof afterSave) !== 'function') return this.error('afterSave must be function.');
+    if (afterSave && (typeof afterSave) !== 'function') return ChEx.error('afterSave must be function.');
     //noinspection JSUnresolvedVariable
     const __local = chrome.storage.local;
     __local.get(key, (base) => {
@@ -203,7 +281,7 @@ ChEx.storage.saveLocalDirectly = function (key, data, afterSave) {
     });
 };
 ChEx.storage.removeLocal = function (key, afterSave) {
-    if (afterSave && (typeof afterSave) !== 'function') return this.error('afterSave must be function.');
+    if (afterSave && (typeof afterSave) !== 'function') return ChEx.error('afterSave must be function.');
     //noinspection JSUnresolvedVariable
     const __local = chrome.storage.local;
     if (afterSave) {
@@ -216,89 +294,92 @@ ChEx.storage.removeLocal = function (key, afterSave) {
 /**
  * 入力内容をテンプレートとして保存する機能
  * @param opt.storageKey
- * @param opt.$parent
- * @param opt.cssSelect
+ * @param opt.init - 保存/選択するためのダイアログを開くボタン($opener)の表示を行うコールバック関数。例: $opener => $opener.appendTo('form')
+ * @param opt.title
  * @param opt.inputs
  * @param opt.onAdd
  * @param opt.onApply
  */
 ChEx.templateStorage = function (opt) {
-    ChEx.storage.loadLocal(opt.storageKey, [], templates => {
-        const $select = $('<select></select>');
-        const __addOption = (text, value) => {
-            let $option = $('<option></option>').text(text).appendTo($select);
-            if (value !== undefined) {
-                $option.attr('value', value);
-            }
-        };
-        //noinspection JSUnresolvedFunction
-        opt.$parent.append(
-            $('<div></div>').append(
-                $select.css(opt.cssSelect || {}).change(function () {
-                    let selected = $select.val();
-                    if (selected === 'BLANK') return;
-                    if (selected === 'ADD') {
-                        let title = prompt('title');
-                        if (title) {
-                            let values = opt.inputs.map(selector => {
-                                let $input = $(selector);
-                                let type = $input.attr('type');
-                                if (type === 'checkbox' || type === 'radio') {
-                                    return $input.filter(':checked').get().map(elem => elem.value).join(",");
-                                } else if ($input.is('select') && $input.prop('multiple')) {
-                                    return $input.children('option:selected').get().map(elem => elem.value).join(",");
-                                } else {
-                                    return $input.val();
-                                }
-                            });
-                            let value = `${title}\t${opt.onAdd(values).join("\t")}`;
-                            ChEx.storage.saveLocal(opt.storageKey, [], templates => {
-                                templates.push(value);
-                            });
-                            __addOption(value, value);
-                        }
-                        $select.val('BLANK');
-                    } else {
-                        let values = selected.split("\t");
-                        values.shift(); //タイトル撤去
-                        for (let selector of opt.inputs) {
-                            let val = values.shift();
+    const dialog = ChEx.dialog({
+        title: opt.title,
+        makeBody: () => {
+            let $table;
+            let $root = $('<div></div>').append(
+                $table = $('<table></table>'),
+                $('<input type="button" value="Add Template" style="margin-top: 5px;">').click(() => {
+                    let title = prompt('title');
+                    if (title) {
+                        let values = opt.inputs.map(selector => {
                             let $input = $(selector);
                             let type = $input.attr('type');
                             if (type === 'checkbox' || type === 'radio') {
-                                $input.prop('checked', false);
-                                val.split(',').forEach(v => $input.filter(`[value="${v}"]`).prop('checked', true));
+                                return $input.filter(':checked').get().map(elem => elem.value).join(",");
                             } else if ($input.is('select') && $input.prop('multiple')) {
-                                $input.children('option').prop('selected', false);
-                                val.split(',').forEach(v => $input.children(`option[value="${v}"]`).prop('selected', true));
+                                //noinspection JSValidateTypes
+                                return $input.children('option:selected').get().map(elem => elem.value).join(",");
                             } else {
-                                $input.val(val);
+                                return $input.val();
                             }
-                        }
-                        opt.onApply(values); //余った values を渡す
+                        });
+                        if (opt.onAdd) opt.onAdd(values);
+                        let tsv = `${title}\t${values.join("\t")}`;
+                        __addRow(tsv);
+                        ChEx.storage.saveLocal(opt.storageKey, [], templates => {
+                            templates.push(tsv);
+                        });
                     }
-                }),
-                $('<a href="javascript:void(0)">del</a>').css('margin-left', '10px').click(() => {
-                    let selected = $select.val();
-                    if (selected === 'ADD' || selected === 'BLANK') return;
-                    let $selected = $select.find('option:selected');
-                    $selected.remove();
-                    $select.val('BLANK');
-                    ChEx.storage.saveLocal(opt.storageKey, [], function (templates) {
-                        let idx = templates.indexOf(selected);
-                        if (idx === -1) return ChEx.error('No value in the template. value: ' + selected);
-                        templates.splice(idx, 1);
-                    });
                 })
-            )
-        );
-        __addOption('', 'BLANK');
-        __addOption('add to templates', 'ADD');
-        for (let value of templates) {
-            //let title = value.replace(/\t.*$/, '');
-            __addOption(value, value);
+            );
+            const __addRow = function (tsv) {
+                let $tr;
+                $table.append(
+                    $tr = $('<tr></tr>').append(
+                        $('<td style="padding:0;"><input type="button" value="Select" style="background-color: lightblue;"></td>').click(() => {
+                            dialog.close();
+                            let values = tsv.split("\t");
+                            values.shift(); //タイトル撤去
+                            for (let selector of opt.inputs) {
+                                let val = values.shift();
+                                let $input = $(selector);
+                                let type = $input.attr('type');
+                                if (type === 'checkbox' || type === 'radio') {
+                                    $input.prop('checked', false);
+                                    val.split(',').forEach(v => $input.filter(`[value="${v}"]`).prop('checked', true));
+                                } else if ($input.is('select') && $input.prop('multiple')) {
+                                    //noinspection JSValidateTypes
+                                    $input.children('option').prop('selected', false);
+                                    //noinspection JSValidateTypes
+                                    val.split(',').forEach(v => $input.children(`option[value="${v}"]`).prop('selected', true));
+                                } else {
+                                    $input.val(val);
+                                }
+                            }
+                            if (opt.onApply) opt.onApply(values); //余った values を渡す
+                        }),
+                        $('<td style="padding: 0 4px;"></td>').text(tsv.replace(/\t[\s\S]*$/, '')).attr('title', tsv),
+                        $('<td><input type="button" value="Delete"></td>').click(() => {
+                            if (!confirm(`Delete?\n\n${tsv.replace(/\n/g, ' ').replace(/\t/g, "\n")}`)) return;
+                            $tr.remove();
+                            ChEx.storage.saveLocal(opt.storageKey, [], function (templates) {
+                                let idx = templates.indexOf(tsv);
+                                if (idx === -1) return ChEx.error('No tsv in the template. tsv: ' + tsv);
+                                templates.splice(idx, 1);
+                            });
+                        }),
+                    )
+                );
+            };
+            ChEx.storage.loadLocal(opt.storageKey, [], templates => {
+                for (let tsv of templates) {
+                    __addRow(tsv);
+                }
+            });
+            return $root;
         }
     });
+    //noinspection JSUnresolvedFunction
+    opt.init($(`<input type="button" value="${opt.title}">`).click(() => dialog.open()));
 };
 
 /** 下位のDOMが変更されたら */
@@ -398,83 +479,83 @@ ChEx.keydownHelp = function (key, parentPosition) {
 /** 最小実装のダイアログ(jquery-uiは大きすぎるので) */
 ChEx.__dialog_opened = false;
 /**
- * @param opt.$html
+ * @param opt.makeBody - ダイアログの中身を作るコールバック。戻り値で中身を返す
  * @param opt.css
  * @param opt.title
- * @param opt.open
- * @param opt.close
+ * @param opt.onOpen
+ * @param opt.onClose
  */
 ChEx.dialog = function (opt) {
     if (ChEx.__dialog_opened) return;
     ChEx.__dialog_opened = true;
-    let $dialog = $('<div></div>');
-    let $back = $('<div></div>');
-    $('body').append(
-        $dialog.css(Object.assign({
-            position: 'absolute',
-            height: 'auto',
-            width: '600px',
-            top: 0,
-            left: 0,
-            zIndex: 2147483647,
-            borderRadius: '3px',
-            border: '1px solid #ddd',
-            background: '#fff',
-            color: '#333',
-            fontFamily: 'Arial,Helvetica,sans-serif',
-            fontSize: '1em',
-            overflow: 'hidden',
-            padding: '.2em',
-            outline: 0,
-        }, opt.css)).append(
-            (opt.title ? $('<div></div>').text(opt.title).css({
-                cursor: 'move',
-                padding: '.4em 1em',
-                borderRadius: '3px',
-                border: '1px solid #ddd',
-                background: '#e9e9e9',
-                color: '#333',
-                fontWeight: 'bold',
-            }) : null),
-            $('<div></div>').css({
-                padding: '.5em 1em',
-                color: '#333',
-            }).append(
-                opt.$html,
-                $('<div class="chex-dialog-buttons"></div>')
-            )
-        ),
-        $back.css({
-            zIndex: 2147483646,
-            background: '#aaa',
-            opacity: '.3',
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-        })
-    );
+    let $dialog, $back, $message;
     const dialog = {
         open: () => {
-            if (opt.open) opt.open();
-            $dialog.show();
-            opt.$html.scrollTop(0); //スクロールが出る場合、ボタン(末尾)にフォーカスが行ってしまうので、これで先頭に戻す
+            $('body').append(
+                $dialog = $('<div></div>').css(Object.assign({
+                    position: 'absolute',
+                    height: 'auto',
+                    width: '600px',
+                    top: 0,
+                    left: 0,
+                    zIndex: 2147483647,
+                    borderRadius: '3px',
+                    border: '1px solid #ddd',
+                    background: '#fff',
+                    color: '#333',
+                    fontFamily: 'Arial,Helvetica,sans-serif',
+                    fontSize: '1em',
+                    overflow: 'hidden',
+                    padding: '.2em',
+                    outline: 0,
+                }, opt.css)).append(
+                    (opt.title ? $('<div></div>').text(opt.title).css({
+                        padding: '.4em 1em',
+                        borderRadius: '3px',
+                        border: '1px solid #ddd',
+                        background: '#e9e9e9',
+                        color: '#333',
+                        fontWeight: 'bold',
+                    }) : null),
+                    $('<div></div>').css({
+                        padding: '.5em 1em',
+                        color: '#333',
+                    }).append(
+                        $message = opt.makeBody(),
+                        $('<div class="chex-dialog-buttons" style="margin-top: 10px;"></div>')
+                    )
+                ),
+                $back = $('<div></div>').css({
+                    zIndex: 2147483646,
+                    background: '#aaa',
+                    opacity: '.3',
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                })
+            );
+            if (opt.onOpen) opt.onOpen();
+            $message.scrollTop(0); //スクロールが出る場合、ボタン(末尾)にフォーカスが行ってしまうので、これで先頭に戻す
             let $window = $(window);
-            let wh = $window.height();
             let ww = $window.width();
             let dw = $dialog.width();
-            let dh = $dialog.height();
+            //noinspection JSValidateTypes
             $dialog.css({
                 left: (ww - dw) / 2,
-                top: Math.max(20, (wh - dh) / 2),
-            })
+                top: $window.scrollTop() + 20 //Math.max(20, (wh - dh) / 2),
+            });
+            $(document).on('keydown.chex-dialog', function (e) {
+                if (e.which === 27) dialog.close();
+            });
+            dialog.addButton('Cancel', () => dialog.close());
         },
         close: () => {
             $dialog.remove();
             $back.remove();
             $(document).off('.chex-dialog');
-            if (opt.close) opt.close();
+            if (opt.onClose) opt.onClose();
             ChEx.__dialog_opened = false;
         },
         addButton: (label, onClick, bgColor) => {
@@ -492,10 +573,6 @@ ChEx.dialog = function (opt) {
             );
         },
     };
-    $(document).on('keydown.chex-dialog', function (e) {
-        if (e.which === 27) dialog.close();
-    });
-    dialog.addButton('Cancel', () => dialog.close());
     return dialog;
 };
 
@@ -541,25 +618,22 @@ ChEx.notify = function (storageKey, list) {
 
 /**
  * 文字入力により行が絞り込まれていく
- * @param {jQuery} opt.$keyDownBase - KeyDownを受け取る外枠
- * @param {string} opt.$filtering - 現在のフィルタ状況を表示する
+ * @param {function} opt.init - 入力内容を表示するエリア($input)を配置するコールバック。$input => {} の形。
  * @param {jQuery} opt.$foundRows - 検索結果で表示/非表示をする行
  */
 ChEx.keyDownSearch = function (opt) {
+    let $input = $('<span style="margin-left: 10px; font-weight: bold; font-size: medium;"></span>');
+    opt.init($input);
     //noinspection JSUnresolvedFunction
-    opt.$keyDownBase.keydown(function (e) {
-        let input = opt.$filtering.text();
+    $('body').keydown(function (e) {
+        let input = $input.text();
         if (e.which === 8) { //BS
             input = input.substr(0, input.length - 1); //末尾1文字撤去
-        } else if (e.ctrlKey && e.which === 86) { // Ctrl + V
-            console.log(ChEx.getFromClipboard().toUpperCase().replace(/[^A-Z0-9]/g, ''));
-            input = input + ChEx.getFromClipboard().toUpperCase().replace(/[^A-Z0-9]/g, ''); //特定の文字のみ許す
-            e.preventDefault();
         } else {
             let char = String.fromCharCode(e.which);
             if (char.match(/[A-Z0-9]/)) input += char; //特定の文字のみ許す
         }
-        opt.$filtering.text(input);
+        $input.text(input);
         opt.$foundRows.show();
         if (input) {
             opt.$foundRows.each(function () {
@@ -591,4 +665,58 @@ ChEx.getFromClipboard = function () {
     let str = $text.val();
     $text.remove();
     return str;
+};
+
+ChEx.uniq = function (ary) {
+    let exists = new Set();
+    let results = [];
+    for (let a of ary) {
+        if (!exists.has(a)) {
+            exists.add(a);
+            results.push(a);
+        }
+    }
+    return results;
+};
+
+/**
+ * @param {string} opt.selector - 日付が入ってる欄を指すselector
+ * @param {string} opt.format - (省略可)日付の書式
+ * @param {bool} opt.color - (省略可)色付けするならtrue
+ * @param {int} opt.now - (省略可)現在のtime値
+ */
+ChEx.dateColor = function (opt) {
+    let $dts = $(opt.selector);
+    //日付欄ごとにループ
+    $dts.each((i, dt) => {
+        let $dt = $(dt);
+        let date = new Date($dt.text());
+        //日付をフォーマットして入れ直す
+        $dt.text(ChEx.dateFormat(date, opt.format || 'Y-M-D H:I:S'));
+        //現在との差分を計算
+        if (opt.color) {
+            let dateNum = date.getTime();
+            if (dateNum <= opt.now) { //期限過ぎたらだんだん赤黒く
+                let num = Math.max(32, 255 - parseInt((opt.now - dateNum) / 1000 / 3600 / 24 * 32));
+                $dt.css('background', `rgb(${num}, 0, 0)`);
+            } else { //期限がせまったら黄色く
+                let num = Math.min(255, parseInt((dateNum - opt.now) / 1000 / 3600 / 24 * 32));
+                $dt.css('background', `rgb(255, 255, ${num})`);
+            }
+        }
+    });
+};
+
+/**
+ * @param {string} opt.selector
+ * @param {function} opt.getValue
+ */
+ChEx.sortDom = function (opt) {
+    let $rows = $(opt.selector);
+    $rows.sort((a, b) => opt.getValue($(a)) > opt.getValue($(b)));
+    $rows.parent().append($rows);
+};
+
+ChEx.clickableLink = function (label) {
+    return $('<a href="javascript:void(0)"></a>').text(label);
 };

@@ -446,6 +446,7 @@ ChEx.keydown = function (key, label, callback) {
         ChEx.__keydown_helps = [];
         //イベント設置
         $(document).keydown(function (e) {
+            if ($('textarea,input').is(':focus')) return;
             let code = e.which;
             let handler = ChEx.__keydown_handlers[code];
             if (handler) {

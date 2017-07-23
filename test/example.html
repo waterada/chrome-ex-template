@@ -1,0 +1,1659 @@
+<!--suppress JSJQueryEfficiency, HtmlFormInputWithoutLabel, JSUnresolvedLibraryURL, HtmlUnknownTag -->
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/github.min.css">
+    <link rel="stylesheet" href="gmail.css">
+    <script src="../src/jquery-2.2.0.min.js"></script>
+    <script src="../src/ChEx.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+    <script>
+        //noinspection JSUnresolvedVariable,JSUnresolvedFunction
+        hljs.initHighlightingOnLoad();
+    </script>
+    <script src="test-helper.js"></script>
+    <script src="presentation.js"></script>
+    <style>
+        table, th, td { border: solid 1px gray;  }
+        table { border-collapse: collapse; }
+        code { line-height: 1.2; }
+        body > div[id] { margin-bottom: 100px; }
+        div.example-points { border: solid 2px silver; border-radius: 5px; color: #333; }
+        div.example-points b { color: black; }
+        div.example-points pre { display: none; }
+        div.example-points .example-opener { color: gray; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+
+
+<div id="example01">
+    <h2>1. 入力内容をテンプレとして保存する</h2>
+    <form>
+        <div><span>タイトル: </span><input type="text" name="a" style="min-width: 200px;"></div>
+        <div><span>種別: </span><input type="radio" name="b" value="1">出退勤 <input type="radio" name="b" value="2">非出退勤</div>
+        <div><span>乗り物: </span><input type="checkbox" name="c" value="1">JR <input type="checkbox" name="c" value="2">地下鉄</div>
+        <div><span>プロジェクト: </span><select name="d" style="min-width: 200px;"><option><option value="1">○○PROJ<option value="2">△△PROJ</select></div>
+        <div><span>メンバー: </span><select name="e" multiple size="4" style="min-width: 200px;"><option value="100001">Aさん<option value="100002">Bさん<option value="100003">Cさん<option value="100004">Dさん</select></div>
+        <div><span>備考: </span><textarea name="f" rows="3" style="min-width: 200px;"></textarea></div>
+    </form>
+    <style>
+        #example01 > form > div { margin: 2px; display: flex; }
+        #example01 > form > div > span { width: 120px; }
+    </style>
+    <script>
+        example('example01', function () {
+            ChEx.storage.saveLocal('example01.templates', [], templates => {
+                if (templates.length) return;
+                templates.push("家→会社１\t交通費（家→会社１）\t1\t2\t1\t100001,100003\t改行→\n←改行");
+                templates.push("会社１→会社２\t交通費（会社１→会社２）\t2\t1,2\t2\t100002,100004\t改行を\n含むメモ");
+            });
+            ChEx.templateStorage({
+                storageKey: 'example01.templates',
+                init: $opener => $opener.appendTo('#example01 form'),
+                inputs: [
+                    '#example01 [name="a"]',
+                    '#example01 [name="b"]',
+                    '#example01 [name="c"]',
+                    '#example01 [name="d"]',
+                    '#example01 [name="e"]',
+                    '#example01 [name="f"]',
+                ],
+                onAdd: values => values,
+                onApply: () => {
+                    //alert('ここで特定の処理をさせることも');
+                },
+                title: 'テンプレートから選択',
+            });
+        });
+    </script>
+    <div class="example-points">
+        <ul>
+            <li><b>ChEx.matchUrl()</b> … URLがマッチした場合のみ処理を行う<pre><code>/** リンクが一致したらcallbackを実行。* は [\w%+.-]+ として扱われ、(*) は callback の引数に中味が渡る。** とすると .+? として扱われる */
+ChEx.matchUrl = function(condition, callback, _href) {
+    let url = _href || location.href;
+    condition = condition.replace(/([.?+\/])/g, '\\$1').replace(/\*\*/g, '.+?').replace(/\*/g, '[\\w%+.-]+');
+    condition = new RegExp(condition);
+    url.replace(condition, (hit, a, b, c, d) => {
+        callback(a, b, c, d);
+    });
+};
+
+//使用例
+// 商品登録ページのみ
+ChEx.matchLink('/projects/*/items/add', function() { /* 拡張処理 */ });
+
+// 商品詳細ページのみ
+ChEx.matchLink('/projects/*/items/(*)/detail', function(itemId) { /* 拡張処理 */ });
+
+//ちなみに同等のことを正規表現でかくとこうなる(正規表現だと読みづらい)
+if (location.href.match(/\/projects\/.*?\/items\/add/)) { /* 拡張処理 */ }
+
+let matches = location.href.match(/\/projects\/.*\/items\/(.*?)\/detail/);
+if (matches) { let itemId = matches[1];  /* 拡張処理 */ }
+</code></pre></li>
+            <li><b>ChEx.templateStorage()</b> … 入力内容を簡単にテンプレ化する関数<pre><code>/**
+ * 入力内容をテンプレートとして保存する機能
+ * @param opt.storageKey
+ * @param opt.init - 保存/選択するためのダイアログを開くボタン($opener)の表示を行うコールバック関数。例: $opener => $opener.appendTo('form')
+ * @param opt.title
+ * @param opt.inputs
+ * @param opt.onAdd
+ * @param opt.onApply
+ */
+ChEx.templateStorage = function (opt) {
+    const dialog = ChEx.dialog({
+        title: opt.title,
+        makeBody: () => {
+            let $table;
+            let $root = $('&lt;div>&lt;/div>').append(
+                $table = $('&lt;table>&lt;/table>'),
+                $('&lt;input type="button" value="Add Template" style="margin-top: 5px;">').click(() => {
+                    let title = prompt('title');
+                    if (title) {
+                        let values = opt.inputs.map(selector => {
+                            let $input = $(selector);
+                            let type = $input.attr('type');
+                            if (type === 'checkbox' || type === 'radio') {
+                                return $input.filter(':checked').get().map(elem => elem.value).join(",");
+                            } else if ($input.is('select') && $input.prop('multiple')) {
+                                //noinspection JSValidateTypes
+                                return $input.children('option:selected').get().map(elem => elem.value).join(",");
+                            } else {
+                                return $input.val();
+                            }
+                        });
+                        if (opt.onAdd) opt.onAdd(values);
+                        let tsv = `${title}\t${values.join("\t")}`;
+                        __addRow(tsv);
+                        ChEx.storage.saveLocal(opt.storageKey, [], templates => {
+                            templates.push(tsv);
+                        });
+                    }
+                })
+            );
+            const __addRow = function (tsv) {
+                let $tr;
+                $table.append(
+                    $tr = $('&lt;tr>&lt;/tr>').append(
+                        $('&lt;td style="padding:0;">&lt;input type="button" value="Select" style="background-color: lightblue;">&lt;/td>').click(() => {
+                            dialog.close();
+                            let values = tsv.split("\t");
+                            values.shift(); //タイトル撤去
+                            for (let selector of opt.inputs) {
+                                let val = values.shift();
+                                let $input = $(selector);
+                                let type = $input.attr('type');
+                                if (type === 'checkbox' || type === 'radio') {
+                                    $input.prop('checked', false);
+                                    val.split(',').forEach(v => $input.filter(`[value="${v}"]`).prop('checked', true));
+                                } else if ($input.is('select') && $input.prop('multiple')) {
+                                    //noinspection JSValidateTypes
+                                    $input.children('option').prop('selected', false);
+                                    //noinspection JSValidateTypes
+                                    val.split(',').forEach(v => $input.children(`option[value="${v}"]`).prop('selected', true));
+                                } else {
+                                    $input.val(val);
+                                }
+                            }
+                            if (opt.onApply) opt.onApply(values); //余った values を渡す
+                        }),
+                        $('&lt;td style="padding: 0 4px;">&lt;/td>').text(tsv.replace(/\t[\s\S]*$/, '')).attr('title', tsv),
+                        $('&lt;td>&lt;input type="button" value="Delete">&lt;/td>').click(() => {
+                            if (!confirm(`Delete?\n\n${tsv.replace(/\n/g, ' ').replace(/\t/g, "\n")}`)) return;
+                            $tr.remove();
+                            ChEx.storage.saveLocal(opt.storageKey, [], function (templates) {
+                                let idx = templates.indexOf(tsv);
+                                if (idx === -1) return ChEx.error('No tsv in the template. tsv: ' + tsv);
+                                templates.splice(idx, 1);
+                            });
+                        }),
+                    )
+                );
+            };
+            ChEx.storage.loadLocal(opt.storageKey, [], templates => {
+                for (let tsv of templates) {
+                    __addRow(tsv);
+                }
+            });
+            return $root;
+        }
+    });
+    opt.init($(`&lt;input type="button" value="${opt.title}">`).click(() => dialog.open()));
+};</code></pre></li>
+            <li><b>ChEx.dialog()</b> … jQuery UI は大きすぎるので使わずにダイアログ出す<pre><code>//---------------------------------
+//使用例
+let dialog = ChEx.dialog({
+    makeBody: () => $('&lt;div>ダイアログの中身&lt;/div>'),
+    title: 'ダイアログのタイトル'
+});
+//デフォルトでは Cancel ボタンしかないので追加する
+dialog.addButton('OK', () => {
+    dialog.close(); //ダイアログ閉じる
+    //OK押した場合の特別な処理
+}, 'lightblue');
+dialog.open(); //ダイアログを開く
+//---------------------------------
+
+
+/** 最小実装のダイアログ(jquery-uiは大きすぎるので) */
+ChEx.__dialog_opened = false;
+/**
+ * @param opt.makeBody - ダイアログの中身を作るコールバック。戻り値で中身を返す
+ * @param opt.css
+ * @param opt.title
+ * @param opt.onOpen
+ * @param opt.onClose
+ */
+ChEx.dialog = function (opt) {
+    if (ChEx.__dialog_opened) return;
+    ChEx.__dialog_opened = true;
+    let $dialog, $back, $message;
+    const dialog = {
+        open: () => {
+            $('body').append(
+                $dialog = $('&lt;div>&lt;/div>').css(Object.assign({
+                    position: 'absolute',
+                    height: 'auto',
+                    width: '600px',
+                    top: 0,
+                    left: 0,
+                    zIndex: 2147483647,
+                    borderRadius: '3px',
+                    border: '1px solid #ddd',
+                    background: '#fff',
+                    color: '#333',
+                    fontFamily: 'Arial,Helvetica,sans-serif',
+                    fontSize: '1em',
+                    overflow: 'hidden',
+                    padding: '.2em',
+                    outline: 0,
+                }, opt.css)).append(
+                    (opt.title ? $('&lt;div>&lt;/div>').text(opt.title).css({
+                        padding: '.4em 1em',
+                        borderRadius: '3px',
+                        border: '1px solid #ddd',
+                        background: '#e9e9e9',
+                        color: '#333',
+                        fontWeight: 'bold',
+                    }) : null),
+                    $('&lt;div>&lt;/div>').css({
+                        padding: '.5em 1em',
+                        color: '#333',
+                    }).append(
+                        $message = opt.makeBody(),
+                        $('&lt;div class="chex-dialog-buttons" style="margin-top: 10px;">&lt;/div>')
+                    )
+                ),
+                $back = $('&lt;div>&lt;/div>').css({
+                    zIndex: 2147483646,
+                    background: '#aaa',
+                    opacity: '.3',
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                })
+            );
+            if (opt.onOpen) opt.onOpen();
+            $message.scrollTop(0); //スクロールが出る場合、ボタン(末尾)にフォーカスが行ってしまうので、これで先頭に戻す
+            let $window = $(window);
+            let ww = $window.width();
+            let dw = $dialog.width();
+            //noinspection JSValidateTypes
+            $dialog.css({
+                left: (ww - dw) / 2,
+                top: $window.scrollTop() + 20 //Math.max(20, (wh - dh) / 2),
+            });
+            $(document).on('keydown.chex-dialog', function (e) {
+                if (e.which === 27) dialog.close();
+            });
+            dialog.addButton('Cancel', () => dialog.close());
+        },
+        close: () => {
+            $dialog.remove();
+            $back.remove();
+            $(document).off('.chex-dialog');
+            if (opt.onClose) opt.onClose();
+            ChEx.__dialog_opened = false;
+        },
+        addButton: (label, onClick, bgColor) => {
+            $dialog.find('.chex-dialog-buttons').append(
+                $('&lt;button>&lt;/button>').text(label).click(onClick).css({
+                    border: '1px solid #c5c5c5',
+                    borderRadius: '3px',
+                    padding: '.4em 1em',
+                    color: '#454545',
+                    background: bgColor || '#f6f6f6',
+                    fontSize: '1em',
+                    cursor: 'pointer',
+                    marginRight: '10px',
+                })
+            );
+        },
+    };
+    return dialog;
+};</code></pre></li>
+            <li><b>ChEx.storage</b> … Storage保存を簡単に<pre><code>//---------------------------------
+//使用例
+ChEx.storage.saveLocal('example.xyz', {}, data => {
+    data['abc'] = 'def';
+});
+ChEx.storage.loadLocal('example.xyz', {}, data => {
+    console.log(data['abc']);
+});
+//---------------------------------
+
+
+/** ローカルストレージ */
+ChEx.storage = {};
+ChEx.storage.loadLocal = function (key, defaultValue, callback) {
+    if ((typeof defaultValue) === 'function') return ChEx.error('defaultValue is required.');
+    //noinspection JSUnresolvedVariable
+    const __local = chrome.storage.local;
+    __local.get(key, (data) => {
+        if (!data[key]) {
+            data[key] = defaultValue;
+        }
+        callback(data[key]);
+    });
+};
+ChEx.storage.__saveLocal = function (base, afterSave) {
+    //noinspection JSUnresolvedVariable
+    const __local = chrome.storage.local;
+    if (afterSave) {
+        __local.set(base, afterSave);
+    } else {
+        __local.set(base);
+    }
+};
+ChEx.storage.saveLocal = function (key, defaultValue, callback, afterSave) {
+    if ((typeof defaultValue) === 'function') return ChEx.error('defaultValue is required.');
+    //noinspection JSUnresolvedVariable
+    const __local = chrome.storage.local;
+    __local.get(key, (base) => {
+        if (!base[key]) {
+            base[key] = defaultValue;
+        }
+        let save = callback(base[key]);
+        if (save !== false) {
+            ChEx.storage.__saveLocal(base, afterSave);
+        } else {
+            if (afterSave) afterSave();
+        }
+    });
+};
+</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.matchUrl('/expense/', function() {
+        ChEx.templateStorage({
+            storageKey: 'example01.templates',          //Storageのキー
+            init: $opener => $opener.appendTo('form'),  //「テンプレートから選択」ボタンの配置
+            title: 'テンプレートから選択',              //表示するボタンのタイトル
+            inputs: [                                   //保存するinputを指すselector
+                '[name="a"]',
+                '[name="b"]',
+                '[name="c"]',
+                '[name="d"]',
+                '[name="e"]',
+                '[name="f"]',
+            ],
+        });
+    });
+});</code></pre>
+</div>
+
+
+<div id="example02">
+    <h2>2. 別ページで算出した結果をもとに転記支援</h2>
+    <table border="1" cellspacing="0" cellpadding="4">
+        <tr><th></th><th>1月</th><th>2月</th><th>3月</th></tr>
+        <tr data-name="a"><th>商品A</th><td>0</td><td>20</td><td>30</td></tr>
+        <tr data-name="b"><th>商品B</th><td>10</td><td>30</td><td>0</td></tr>
+        <tr data-name="c"><th>商品C</th><td>0</td><td>-10</td><td>80</td></tr>
+    </table>
+    <br/>
+    <br/>
+    <b>別画面の入力欄</b>
+    <form>
+        <div><span>商品A: </span><input type="text" name="a" value="1"></div>
+        <div><span>商品B: </span><input type="text" name="b" value="2"></div>
+        <div><span>商品C: </span><input type="text" name="c" value="3"></div>
+    </form>
+    <style>
+        #example02 td { text-align: right; }
+        #example02 > form > div { margin: 2px; display: flex; }
+        #example02 > form > div > span { width: 60px; }
+        #example02 > form > div > input { width: 100px; }
+        #example02 > form > div > a { margin-left: 10px; font-size: small; }
+    </style>
+    <script>
+        example('example02', function ($example) {
+            //合計計算
+            let sums = {};
+            $example.find('tr').each((i, tr) => {
+                let $tr = $(tr);
+                let key = $tr.data('name');
+                if (key) {
+                    let sum = 0;
+                    $tr.find('td').each((i, td) => sum += 1 * $(td).text());
+                    sums[key] = sum;
+                    $tr.append(`<th style="background-color: lightyellow;">${sum}</th>`);
+                } else {
+                    $tr.append(`<th style="background-color: lightyellow;">合計</th>`);
+                }
+            });
+            ChEx.storage.saveLocalDirectly('example02.sums', sums);
+            //別画面で結果を表示
+            setTimeout(() => {
+                ChEx.storage.loadLocal('example02.sums', {}, sums => {
+                    for (let key of Object.keys(sums)) {
+                        let $input = $example.find(`input[name="${key}"]`);
+                        $input.after(
+                            ChEx.clickableLink(`<< ${sums[key]}`).click(() => {
+                                $input.val(sums[key]);
+                            })
+                        );
+                    }
+                });
+            }, 1000);
+        });
+    </script>
+    <div class="example-points">
+        <ul>
+            <li><b>セルの値を合計する</b></li>
+            <li><b>別ページへの表示</b></li>
+            <li><b>ChEx.waitDom()</b> … Domが出現するまで待ってから処理を行う。<pre><code>//---------------------------------
+//使用例
+// form .target を最大 10 秒探して、見つかれば処理を行う。見つからなければエラーにする。
+ChEx.waitDom('form .target', '対象のDom', 10, function($target) {
+    // $target には取得することができた Dom (jQuery) が入ってる。
+    // 第２引数の文言はエラーメッセージ用。
+    //   Dom が見つからない場合、Dom から意図がつかめなくなり得るので、
+    //   かならず日本語でも残しておくべき。
+});
+//---------------------------------
+
+
+/** DOMの出現を待つ。１秒ずつmax回試行。見つかったらnextを実行 */
+ChEx.waitDom = function(selector, label, max, next, _count) {
+    let $item = $(selector); //毎回取り直す必要あり
+    if ($item.length) {
+        next($item);
+    } else {
+        _count = (_count || 0) + 1;
+        if (_count < max) {
+            setTimeout(function () {
+                ChEx.waitDom(selector, label, max, next, _count);
+            }, 1000);
+        } else {
+            ChEx.error(`${max} 秒待ちましたが ${selector} (${label}) が見つかりませんでした。`);
+        }
+    }
+};</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function() {
+    ChEx.matchUrl('/stocks/', function() {
+        //合計列を追加し、同時にstorageに保存する
+        ChEx.waitDom('#stock table', '合計するテーブル', 10, function($table) {
+            let sums = {};
+            $table.find('tr').each((i, tr) => {
+                let $tr = $(tr);
+                let key = $tr.data('name');
+                if (key) {
+                    let sum = 0;
+                    $tr.find('td').each((i, td) => sum += parseInt($(td).text()));
+                    sums[key] = sum;
+                    $tr.append(`&lt;th style="background-color: lightyellow;">${sum}&lt;/th>`);
+                } else {
+                    $tr.append(`&lt;th style="background-color: lightyellow;">合計&lt;/th>`);
+                }
+            });
+            ChEx.storage.saveLocalDirectly('example02.sums', sums);
+        });
+    });
+
+    ChEx.matchUrl('/inputs/', function() {
+        //入力画面が表示されたらstorageからデータを読み出し転記しやすいリンクを出す
+        ChEx.storage.loadLocal('example02.sums', {}, sums => {
+            for (let key of Object.keys(sums)) {
+                let $input = $(`input[name="${key}"]`);
+                $input.after(
+                    $('&lt;a href="javascript:void(0)">&lt;/a>').text(`<< ${sums[key]}`).click(() => {
+                        $input.val(sums[key]);
+                    })
+                );
+            }
+        });
+    });
+});</code></pre>
+</div>
+
+
+<div id="example03">
+    <h2>3. 絞り込み</h2>
+    <div style="color: gray;">↓クリックで選択可能</div>
+    <div class="main" style="min-height: 100vh;">
+        <table border="1">
+            <!--
+            https://builderscon.io/tokyo/2017/sessions
+            $('.s4.l4.col').map((i, root) => `<tr><td>${i}</td><td>${$(root).find('.session-title').html().replace(/<.*?>/g,'')}</td><td>${$(root).find('.speaker-name').html().replace(/<.*?>/g,'').replace(/^by\s+/,'')}</td></tr>`).get().join("\n")
+            -->
+            <tr><td>0</td><td>【前夜祭】大人のビルコン 〜撤退技術スペシャル〜（１）</td><td>lestrrat</td></tr>
+            <tr><td>1</td><td>【前夜祭】大人のビルコン 〜撤退技術スペシャル〜（２）</td><td>lestrrat</td></tr>
+            <tr><td>2</td><td>【前夜祭】大人のビルコン 〜撤退技術スペシャル〜（３）</td><td>lestrrat</td></tr>
+            <tr><td>3</td><td>【前夜祭】大人のビルコン 〜撤退技術スペシャル〜（４）</td><td>lestrrat</td></tr>
+            <tr><td>4</td><td>Opening</td><td>lestrrat</td></tr>
+            <tr><td>5</td><td>Desktop Apps with JavaScript</td><td>felixrieseberg</td></tr>
+            <tr><td>6</td><td>オンプレ、クラウドを組み合わせて作るビックデータ基盤</td><td>nii_yan</td></tr>
+            <tr><td>7</td><td>DeepLearningによるアイドル顔識別を支える技術</td><td>sugyan</td></tr>
+            <tr><td>8</td><td>初めてのMySQLチューニング -5.7 対応版-</td><td>mamy1326</td></tr>
+            <tr><td>9</td><td>PHPで支える大規模アーキテクチャ</td><td>ytake</td></tr>
+            <tr><td>10</td><td>OSS開発を仕事にする技術</td><td>mumoshu</td></tr>
+            <tr><td>11</td><td>ランチセッション A</td><td>lestrrat</td></tr>
+            <tr><td>12</td><td>ランチセッションB</td><td>lestrrat</td></tr>
+            <tr><td>13</td><td>真のコンポーネント粒度を求めて</td><td>Takazudo</td></tr>
+            <tr><td>14</td><td>横山三国志に「うむ」は何コマある？</td><td>heruheru3</td></tr>
+            <tr><td>15</td><td>Androidアプリ開発アンチパターン</td><td>fkmhrk</td></tr>
+            <tr><td>16</td><td>ブラウザ拡張のクロスブラウザ対応についてどう向き合っているか</td><td>pastak</td></tr>
+            <tr><td>17</td><td>マイクロチームでの高速な新規開発を支える開発・分析基盤</td><td>timakin</td></tr>
+            <tr><td>18</td><td>複雑なJavaScriptアプリケーションに立ち向かう...</td><td>Shinpeim</td></tr>
+            <tr><td>19</td><td>Anatomy of DDoS</td><td>suzannealdrich</td></tr>
+            <tr><td>20</td><td>Haskellを使おう</td><td>hiratara</td></tr>
+            <tr><td>21</td><td>フレームなき道を拓くPHP</td><td>zonuexe</td></tr>
+            <tr><td>22</td><td>Goで実装する軽量マークアップ言語パーサー</td><td>aereal</td></tr>
+            <tr><td>23</td><td>RDBアンチパターン リファクタリング</td><td>soudai</td></tr>
+            <tr><td>24</td><td>Building high performance...</td><td>cubicdaiya</td></tr>
+            <tr><td>25</td><td>Kubernetesのクラスタ1つに開発と本番運用に必...</td><td>Kenichi  Naoe</td></tr>
+            <tr><td>26</td><td>ディープラーニングを加速するVolta GPUプラットフォーム</td><td>Mana Murakami</td></tr>
+            <tr><td>27</td><td>Lightning Talks</td><td>lestrrat</td></tr>
+            <tr><td>28</td><td>懇親会</td><td>lestrrat</td></tr>
+            <tr><td>29</td><td>3Dプリンタで作る1次元セル・オートマトン、階差機関、...</td><td>mackee</td></tr>
+            <tr><td>30</td><td>ここまで出来るmruby</td><td>pyama86</td></tr>
+            <tr><td>31</td><td>知られざる世界 〜WEB以外のPHP〜</td><td>uzulla</td></tr>
+            <tr><td>32</td><td>Chrome拡張を使って様々なWebサービスをハックする</td><td>Wataru Terada</td></tr>
+            <tr><td>33</td><td>静的解析とUIの自動生成を駆使してモバイルアプリの運用...</td><td>tenntenn</td></tr>
+            <tr><td>34</td><td>Googleが開発したニューラルネット専用LSI「Te...</td><td>kazunori279</td></tr>
+            <tr><td>35</td><td>小さく始めて育てるコンパイラ</td><td>rhysd</td></tr>
+            <tr><td>36</td><td>今日から使えるCSS Grid</td><td>geckotang</td></tr>
+            <tr><td>37</td><td>サーバサイドKotlinのすすめ</td><td>Noriyuki Ishida</td></tr>
+            <tr><td>38</td><td>Ionic...</td><td>rdlabo</td></tr>
+            <tr><td>39</td><td>ランチセッション C</td><td>lestrrat</td></tr>
+            <tr><td>40</td><td>ランチセッション D</td><td>lestrrat</td></tr>
+            <tr><td>41</td><td>AWS CodeBuild...</td><td>ssig33</td></tr>
+            <tr><td>42</td><td>polyglot になろう !!</td><td>januswel</td></tr>
+            <tr><td>43</td><td>Make you a React: How to...</td><td>jbucaran</td></tr>
+            <tr><td>44</td><td>OSSで始めるセキュリティログ収集</td><td>bungoume</td></tr>
+            <tr><td>45</td><td>OSS の引き継ぎ方</td><td>hsbt</td></tr>
+            <tr><td>46</td><td>Factory Class</td><td>obra</td></tr>
+            <tr><td>47</td><td>HADOが試したポジショントラッキングの話</td><td>izugch4423</td></tr>
+            <tr><td>48</td><td>フロントエンドエンジニアが主役のBaaSを作った話</td><td>Takezaki Shinichiro</td></tr>
+            <tr><td>49</td><td>OSS貢献超入門</td><td>shigemk2</td></tr>
+            <tr><td>50</td><td>WEB+DB PRESS 100号記念 特別企画（仮）</td><td>lestrrat</td></tr>
+            <tr><td>51</td><td>Writing PHP at Slack HQ</td><td>carlyhasredhair</td></tr>
+            <tr><td>52</td><td>汎用CMSから新規開発の自社サービスへ移行した事例のご紹介</td><td>motchang</td></tr>
+            <tr><td>53</td><td>型を意識した PHP アプリケーション開発</td><td>shin1x1</td></tr>
+            <tr><td>54</td><td>ここが辛いよサーバーレス。だが私は乗り越えた</td><td>yamitzky</td></tr>
+            <tr><td>55</td><td>Serverless Server Side Swift</td><td>noppoMan</td></tr>
+            <tr><td>56</td><td>Closing</td><td>lestrrat</td></tr>
+            <tr><td>57</td><td>MP4 ParserをSwiftで書いてみた</td><td>Satoshi Shmd</td></tr>
+            <tr><td>58</td><td>分割QRコードの読み取り方</td><td>Satoshi Shmd</td></tr>
+            <tr><td>59</td><td>SketchでVueコンポーネントを設計してみる</td><td>Yosuke Doke</td></tr>
+            <tr><td>60</td><td>電池一本で5年間動くデバイスを作るには。</td><td>Takashi  Komori</td></tr>
+        </table>
+    </div>
+    <style>
+        #example03 tr.checked { background-color: lightblue; }
+        #example03 td, #example03 th { padding: 0 4px; }
+    </style>
+    <script>
+        $(function () {
+            $('#example03 tr').click(function () {
+                $(this).toggleClass('checked')
+            });
+        });
+        example('example03', function () {
+            ChEx.keyDownSearch({
+                init: $input => {
+                    ChEx.findOne('#example03 .main', '絞り込みの枠').prepend(
+                        $('<div style="padding: 5px; background-color: darkblue; color: white;">文字をタイプすることで絞り込みが可能です: </div>').append(
+                            $input.css({ marginLeft: '10px', fontWeight: 'bold', fontSize: 'medium' })
+                        )
+                    );
+                },
+                $foundRows: ChEx.findOneThen('#example03', 'table > tbody > tr', '絞り込み単位となる行')
+            });
+        });
+    </script>
+    <br/>
+    <div class="example-points">
+        <ul>
+            <li><b>ChEx.keyDownSearch()</b> … キー押すことで絞り込ませることで探しやすくする。<pre><code>/**
+ * 文字入力により行が絞り込まれていく
+ * @param {function} opt.init - 入力内容を表示するエリア($input)を配置するコールバック。$input => {} の形。
+ * @param {jQuery} opt.$foundRows - 検索結果で表示/非表示をする行
+ */
+ChEx.keyDownSearch = function (opt) {
+    let $input = $('&lt;span style="margin-left: 10px; font-weight: bold; font-size: medium;">&lt;/span>');
+    opt.init($input);
+    $('body').keydown(function (e) {
+        let input = $input.text();
+        if (e.which === 8) { //BS
+            input = input.substr(0, input.length - 1); //末尾1文字撤去
+        } else {
+            let char = String.fromCharCode(e.which);
+            if (char.match(/[A-Z0-9]/)) input += char; //特定の文字のみ許す
+        }
+        $input.text(input);
+        opt.$foundRows.show();
+        if (input) {
+            opt.$foundRows.each(function () {
+                let $row = $(this);
+                if ($row.text().toUpperCase().indexOf(input) === -1) $row.hide();
+            });
+        }
+    });
+};</code></pre></li>
+            <li><b>キー入力にあわせて絞り込む</b></li>
+            <li><b>ChEx.findOne()</b> … $() の代わり。構造変わった場合に検知しやすい<pre><code>/** きっかり１個ヒットしない場合にエラー出す。
+ *  selector だけだと動かなくなった際に何が欲しかったのかわからなくなるので label も書くこと */
+ChEx.findOne = function (selector, label) {
+    let $item = $(selector);
+    if ($item.length !== 1) {
+        ChEx.error(`${selector} (${label}) が ${$item.size()} 個あります。`);
+    }
+    return $item;
+};</code></pre></li>
+            <li><b>ChEx.findOneThen()</b> … $() の代わり。構造変わった場合に検知しやすい<pre><code>/**  findOne(selector) 後、`${selector} ${subSelector}` で再検索する */
+ChEx.findOneThen = function (selector, subSelector, label) {
+    ChEx.findOne(selector, `${label} のTop`);
+    return $(`${selector} ${subSelector}`);
+};</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.matchUrl('/sessions/', function() {
+        ChEx.keyDownSearch({
+            init: $input => {
+                ChEx.findOne('.main', '絞り込みの枠').prepend(
+                    $('&lt;div style="padding: 5px; background-color: darkblue; color: white;">文字をタイプすることで絞り込みが可能です: &lt;/div>').append(
+                        $input.css({ marginLeft: '10px', fontWeight: 'bold', fontSize: 'medium' })
+                    )
+                );
+            },
+            $foundRows: ChEx.findOneThen('#aaa', 'table > tbody > tr', '絞り込み単位となる行')
+        });
+    });
+});</code></pre>
+</div>
+
+
+<div id="example04">
+    <h2>4. ユーザ登録画面のテストの際にバリデーション通る入力内容を簡単に作り出す</h2>
+    <form>
+        <div><span>名前<span class="required">(*)</span> </span><input type="text" name="a" value=""></div>
+        <div><span>メアド<span class="required">(*)</span> </span><input type="text" name="b" value=""></div>
+        <div><span>パスワード<span class="required">(*)</span> </span><input type="password" name="c" value=""></div>
+        <div><span>電話番号<span class="required">(*)</span> </span><input type="text" name="d" value=""></div>
+        <div><span>都道府県<span class="required">(*)</span> </span><input type="text" name="e" value=""></div>
+        <div><span>住所１<span class="required">(*)</span> </span><input type="text" name="f" value=""></div>
+        <div><span>住所２<span class="required">(*)</span> </span><input type="text" name="g" value=""></div>
+        <div><span class="required">(*) = 必須</span></div>
+        <div><input type="button" value="登録" style="width: 50px;"></div>
+    </form>
+    <style>
+        #example04 > form > div { margin: 2px; display: flex; }
+        #example04 > form > div > span { width: 100px; }
+        #example04  > form > div > input { width: 200px; }
+        #example04 .required { font-size: x-small; color: darkred; }
+    </style>
+    <script>
+        example('example04', function ($example) {
+            let i = 0;
+            $example.find('form').append(
+                $('<input type="button" value="クリックのたびに違うユーザに">').click(() => {
+                    i++;
+                    $example.find('[name="a"]').val(`名前${i}`);
+                    $example.find('[name="b"]').val(`example${i}@example.com`);
+                    $example.find('[name="c"]').val(`example${i}@example.com`);
+                    $example.find('[name="d"]').val(`000-0000-000${i}`);
+                    $example.find('[name="e"]').val(`東京都`);
+                    $example.find('[name="f"]').val(`○○区${i}丁目`);
+                    $example.find('[name="g"]').val(`${i}-${i}`);
+                })
+            );
+        });
+    </script>
+    <div class="example-points">
+        <ul>
+            <li><b>量産する簡単なロジック</b></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.matchUrl('/users/add', function() {
+        let i = 0;
+        ChEx.findOne('#user-add-form').append(
+            $('&lt;input type="button" value="クリックのたびに違うユーザに">').click(() => {
+                i++;
+                $example.find('[name="a"]').val(`名前${i}`);
+                $example.find('[name="b"]').val(`example${i}@example.com`);
+                $example.find('[name="c"]').val(`example${i}@example.com`);
+                $example.find('[name="d"]').val(`000-0000-000${i}`);
+                $example.find('[name="e"]').val(`東京都`);
+                $example.find('[name="f"]').val(`○○区${i}丁目`);
+                $example.find('[name="g"]').val(`${i}-${i}`);
+            })
+        );
+    });
+});</code></pre>
+</div>
+
+
+<div id="example05">
+    <h2>5. redmine の担当者を選択しやすくする</h2>
+    <div>コメント欄:</div>
+    <div style="margin-left: 40px;" class="example-comments">
+        <div><a href="/users/31">uzulla</a>: 初回投稿</div>
+        <div><a href="/users/21">Wataru Terada</a>: 回答その１</div>
+    </div>
+    <br/>
+    <form>
+        <div><span>担当者: </span>
+            <select class="user-select">
+                <option>
+                <option>aereal
+                <option>bungoume
+                <option>carlyhasredhair
+                <option>cubicdaiya
+                <option>felixrieseberg
+                <option>fkmhrk
+                <option>geckotang
+                <option>heruheru3
+                <option>hiratara
+                <option>hsbt
+                <option>izugch4423
+                <option>januswel
+                <option>jbucaran
+                <option>kazunori279
+                <option>Kenichi Naoe
+                <option>lestrrat
+                <option>mackee
+                <option>mamy1326
+                <option>Mana Murakami
+                <option>motchang
+                <option>mumoshu
+                <option>nii_yan
+                <option>noppoMan
+                <option>Noriyuki Ishida
+                <option>obra
+                <option>pastak
+                <option>pyama86
+                <option>rdlabo
+                <option>rhysd
+                <option>Satoshi Shmd
+                <option>shigemk2
+                <option>shin1x1
+                <option>Shinpeim
+                <option>soudai
+                <option>ssig33
+                <option>sugyan
+                <option>suzannealdrich
+                <option>Takashi Komori
+                <option>Takazudo
+                <option>Takezaki Shinichiro
+                <option>tenntenn
+                <option>timakin
+                <option>uzulla
+                <option>Wataru Terada
+                <option>yamitzky
+                <option>Yosuke Doke
+                <option>ytake
+                <option>zonuexe
+            </select>
+        </div>
+    </form>
+    <style>
+        #example05 > form > div { margin: 2px; display: flex; }
+        #example05 .example-comments > div{ display: flex; }
+        #example05 .example-comments a { color: darkblue; text-decoration: none; display: block; width: 150px; }
+    </style>
+    <script>
+        example('example05', function ($example) {
+            let users = $example.find("a[href^=\"/users/\"]").get().map(a => $(a).text().trim());
+            users = ChEx.uniq(users);
+            users = users.sort((a, b) => (a.toUpperCase() > b.toUpperCase()));
+            $example.find('.user-select').after(
+                $('<div></div>').append(
+                    users.map(name => ChEx.clickableLink(`[${name}]`).css({
+                        marginLeft: '8px',
+                        fontSize: 'small',
+                    }).click(() => $example.find(`.user-select option:contains(${name})`).prop('selected', true)))
+                )
+            );
+        });
+    </script>
+    <div class="example-points">
+        <ul>
+            <li><b>画面に表示されている特定の情報を取得</b></li>
+            <li><b>選択するリンク追加</b></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.matchUrl('/tickets/*/edit', function() {
+        let users = $("a[href^=\"/users/\"]").get().map(a => $(a).text().trim());
+        users = ChEx.uniq(users);
+        users = users.sort((a, b) => (a.toUpperCase() > b.toUpperCase()));
+        $('.user-select').after(
+            $('&lt;div>&lt;/div>').append(
+                users.map(name => ChEx.clickableLink(`[${name}]`).css({
+                    marginLeft: '8px',
+                    fontSize: 'small',
+                }).click(() => $(`.user-select option:contains(${name})`).prop('selected', true)))
+            )
+        );
+    });
+});</code></pre>
+</div>
+
+
+<div id="example06">
+    <h2>6. 日時を日本時間に書き換え、現在時との差分を色で示す</h2>
+    本日: 2017-07-05
+    <table>
+        <tr><td>1</td><td>abcdef</td><td class="exp-dt">Sun Jul 03 2017 09:01:06 UTC</td></tr>
+        <tr><td>2</td><td>ghijkl</td><td class="exp-dt">Sun Jul 08 2017 09:01:06 UTC</td></tr>
+        <tr><td>3</td><td>mnopqr</td><td class="exp-dt">Sun Jul 04 2017 09:01:06 UTC</td></tr>
+        <tr><td>4</td><td>stuvwx</td><td class="exp-dt">Sun Jul 09 2017 09:01:06 UTC</td></tr>
+        <tr><td>5</td><td>yzabcd</td><td class="exp-dt">Sun Jul 01 2017 09:01:06 UTC</td></tr>
+        <tr><td>6</td><td>efghij</td><td class="exp-dt">Sun Jul 10 2017 09:01:06 UTC</td></tr>
+        <tr><td>7</td><td>klmnop</td><td class="exp-dt">Sun Jul 02 2017 09:01:06 UTC</td></tr>
+        <tr><td>8</td><td>qrstuv</td><td class="exp-dt">Sun Jul 05 2017 09:01:06 UTC</td></tr>
+        <tr><td>9</td><td>wxyxab</td><td class="exp-dt">Sun Jul 06 2017 09:01:06 UTC</td></tr>
+        <tr><td>0</td><td>cdefgh</td><td class="exp-dt">Sun Jul 07 2017 09:01:06 UTC</td></tr>
+    </table>
+    <script>
+        example('example06', function () {
+            ChEx.dateColor({
+                selector: '#example06 .exp-dt',
+                format: 'Y-M-D H:I:S',
+                color: true,
+                now: new Date('2017-07-05').getTime(),
+            });
+            $('#example06 table').after(
+                ChEx.clickableLink('Sort').click(function () {
+                    ChEx.sortDom({
+                        selector: '#example06 tr',
+                        getValue: $tr => new Date($tr.find('.exp-dt').text()).getTime(),
+                    });
+                })
+            );
+        });
+    </script>
+    <br/>
+    <div class="example-points">
+        <ul>
+            <li><b>ChEx.dateColor()</b> … 日付を日本時間にしてフォーマットして色付けする<pre><code>/**
+ * @param {string} opt.selector - 日付が入ってる欄を指すselector
+ * @param {string} opt.format - (省略可)日付の書式
+ * @param {bool} opt.color - (省略可)色付けするならtrue
+ * @param {int} opt.now - (省略可)現在のtime値
+ */
+ChEx.dateColor = function (opt) {
+    let $dts = $(opt.selector);
+    //日付欄ごとにループ
+    $dts.each((i, dt) => {
+        let $dt = $(dt);
+        let date = new Date($dt.text());
+        //日付をフォーマットして入れ直す
+        $dt.text(ChEx.dateFormat(date, opt.format || 'Y-M-D H:I:S'));
+        //現在との差分を計算
+        if (opt.color) {
+            let dateNum = date.getTime();
+            if (dateNum <= opt.now) { //期限過ぎたらだんだん赤黒く
+                let num = Math.max(32, 255 - parseInt((opt.now - dateNum) / 1000 / 3600 / 24 * 32));
+                $dt.css('background', `rgb(${num}, 0, 0)`);
+            } else { //期限がせまったら黄色く
+                let num = Math.min(255, parseInt((dateNum - opt.now) / 1000 / 3600 / 24 * 32));
+                $dt.css('background', `rgb(255, 255, ${num})`);
+            }
+        }
+    });
+};</code></pre></li>
+            <li><b>ChEx.sortDom()</b> … Domを並べ替える。<pre><code>//$().sort()は少し癖があるのでそれを吸収する
+ChEx.sortDom = function (opt) {
+    let $rows = $(opt.selector);
+    $rows.sort((a, b) => opt.getValue($(a)) > opt.getValue($(b)));
+    $rows.parent().append($rows);
+};</code></pre></li>
+            <li><b>ChEx.dateFormat()</b> … Date値をフォーマット。<pre><code>/** 日付フォーマット。'Y-M-D H:I:S.MS' の形式で指定 */
+ChEx.dateFormat = function (date, format) {
+    let str = format;
+    str = str.replace(/MS/g, () => `00${date.getMilliseconds()}`.slice(-3));
+    str = str.replace(/Y/g, () => date.getFullYear());
+    str = str.replace(/M/g, () => `0${date.getMonth() + 1}`.slice(-2));
+    str = str.replace(/D/g, () => `0${date.getDate()}`.slice(-2));
+    str = str.replace(/H/g, () => `0${date.getHours()}`.slice(-2));
+    str = str.replace(/I/g, () => `0${date.getMinutes()}`.slice(-2));
+    str = str.replace(/S/g, () => `0${date.getSeconds()}`.slice(-2));
+    return str;
+};</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.matchUrl('/tickets/', function() {
+        ChEx.dateColor({
+            selector: '.exp-dt',
+            format: 'Y-M-D H:I:S',
+            color: true,
+        });
+
+        //ソート
+        $('.data-table').after(
+            ChEx.clickableLink('Sort').click(function () {
+                ChEx.sortDom({
+                    selector: '#aaa tr',
+                    getValue: $tr => new Date($tr.find('.exp-dt').text()).getTime(),
+                });
+            })
+        );
+    });
+});</code></pre>
+</div>
+
+
+<div id="example07">
+    <h2>7. 特定の領域を書き換えられるように</h2>
+    <script>
+        $(function () {
+            $('#example07 > h2').after($('#example03 > .main > table').clone());
+        });
+        example('example07', function () {
+            ChEx.rewritableTexts({
+                storageKey: 'example07.comments',
+                $targets: $('#example07 > table td'),
+                getId: $target => `td-${$('#example07 > table td').index($target)}`,
+                onChange: ($target, changed) => $target.css('color', changed ? 'red' : 'black'),
+            });
+        });
+    </script>
+    <br/>
+    <div class="example-points">
+        <ul>
+            <li><b>ChEx.rewritableTexts()</b> … 画面を書き換えられるように<pre><code>/**
+ * @param {jQuery} opt.$targets - 書き換え可能にする対象
+ * @param {string} opt.storageKey - 保存につかうキー
+ * @param {function} opt.getId - 保存につかうID
+ * @param {function|undefined} opt.rewritableIf - (省略可) 書き換え可能にする条件
+ * @param {function|undefined} opt.onChange - (省略可) 書き換えた際に見た目など変えたい場合
+ */
+ChEx.rewritableTexts = function (opt) {
+    //設定済みコメント読み込み
+    ChEx.storage.loadLocal(opt.storageKey, {}, texts => {
+        opt.$targets.each((i, target) => {
+            let $target = $(target);
+            let id = opt.getId($target);
+            let orig = $target.text().trim();
+            $target.attr('data-chrome-ex-orig', orig);
+            if (texts[id]) {
+                $target.text(texts[id]);
+                if (opt.onChange) opt.onChange($target, orig !== texts[id]);
+            }
+        });
+    });
+    //クリックイベント設定
+    opt.$targets.click(event => {
+        let $target = $(event.currentTarget);
+        if (opt.rewritableIf && !opt.rewritableIf($target)) { return; }
+        //確認
+        let text = prompt("", $target.text().trim());
+        if (text === null) {
+            return;
+        }
+        //入力値に書き換え or 空欄なら元の値に戻す
+        if (text) {
+            $target.text(text);
+            if (opt.onChange) opt.onChange($target, true);
+        } else {
+            let orig = $target.attr('data-chrome-ex-orig');
+            $target.text(orig);
+            if (opt.onChange) opt.onChange($target, false);
+        }
+        //保存
+        let id = opt.getId($target);
+        if (text) {
+            ChEx.storage.saveLocal(opt.storageKey, {}, function (texts) {
+                texts[id] = text;
+            });
+        } else {
+            ChEx.storage.saveLocal(opt.storageKey, {}, function (texts) {
+                delete texts[id];
+            });
+        }
+    });
+};
+</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.matchUrl('/expense/', function() {
+        ChEx.rewritableTexts({
+            storageKey: 'example07.comments',
+            $targets: $('#aaa .chex-text'),
+            getId: $target => $target.prev('.chex-id').text(),
+            onChange: ($target, changed) => $target.css('color', changed ? 'red' : 'black'),
+        });
+    });
+});</code></pre>
+</div>
+
+
+<div id="example08">
+    <h2>8. 利用者に通知を送る</h2>
+    <script>
+        example('example08', function ($example) {
+            ChEx.info('●●の改造', 'wataru.terada@accenture.com', '寺田 渉');
+            ChEx.notify('example08.notify', [
+                { ymd: '2017-06-17 (v1.22)', htmls: ['通知する機能を追加しました。今後、新機能を追加した際にはこの機能でお知らせします。',
+                    '【重要】Timeレポートのプルダウンで絞り込みできるようにしました。キー入力することでリストが絞り込まれます。BSキーで絞り込み文字を削除できます。',
+                    '【重要】Taxi のテンプレート保存機能は作ったものの、いまいち便利さが判らないわりにメンテが大変なので削除することにしました。もし困るという人がいましたらすぐに連絡ください。']},
+                { ymd: '2017-06-26 (v1.23)', htmls: ['【バグFIX】新規作成ページの場合に時間転記のリンクが出なかったので修正しました。']},
+            ]);
+            $example.append(
+                ChEx.clickableLink('v1.22 まで既読だったことにする').click(function () {
+                    ChEx.storage.saveLocal('example08.notify', {}, data => {
+                        data['alreadyReadNotify'] = '2017-06-17 (v1.22)';
+                    }, () => location.reload());
+                }),
+                '<br/>',
+                ChEx.clickableLink('10分経過したことにする').click(function () {
+                    ChEx.storage.saveLocal('example08.notify', {}, data => {
+                        data['alreadyReadNotifyLater'] -= 10 * 60 * 1000; //10分戻すことで10分後を表現
+                    }, () => location.reload());
+                }),
+                '<br/>',
+                ChEx.clickableLink('既読状態をすべてクリアする').click(function () {
+                    ChEx.storage.removeLocal('example08.notify', () => location.reload());
+                })
+            );
+        });
+    </script>
+    <div class="example-points">
+        <ul>
+            <li><b>ChEx.info()</b> … 拡張名、問い合わせ先などを登録する<pre><code>/** 通知用基本情報の登録 */
+ChEx.__info = {};
+ChEx.info = function (pluginName, email, author) {
+    ChEx.__info = {pluginName, email, author};
+};</code></pre></li>
+            <li><b>ChEx.notify()</b> … 変更内容などをユーザに通知する<pre><code>ChEx.notify = function (storageKey, list) {
+    ChEx.storage.loadLocal(storageKey, {}, data => {
+        let already = data['alreadyReadNotify'] || '';
+        list = list.sort((a, b) => a.ymd > b.ymd);
+        if (already) {
+            //既読は除去
+            list = list.filter(item => already < item.ymd);
+        }
+        if (list.length) {
+            let later = data['alreadyReadNotifyLater'] || '';
+            if (later && (new Date()).getTime() < later) return;
+            //表示
+            $('body').append(
+                $('&lt;div id="chex-notify" style="position: fixed; left: 0; top: 0; padding: 0; width: 100vw; background-color: lightblue; z-index: 9999; box-shadow: 4px 4px 4px rgba(0,0,0,0.2);">&lt;/div>').append(
+                    `&lt;div style="padding: 10px; background-color: darkblue; color: white;">${ChEx.h(ChEx.__info.pluginName)}&lt;/div>`,
+                    list.map(item => `&lt;div style="margin: 20px; font-size: medium;">&lt;div style="color: gray;">${item.ymd}&lt;/div>&lt;ul>&lt;li>${item.htmls.join('&lt;li>')}&lt;/ul>&lt;/div>`),
+                    $('&lt;div style="display: flex; justify-content: center; align-items: center; margin: 30px">&lt;/div>').append(
+                        $('&lt;input type="button" value="Close (あとで再通知)" style="font-size: larger; padding: 10px;">').click(() => {
+                            $('#chex-notify').hide();
+                            ChEx.storage.saveLocal(storageKey, {}, data => {
+                                data['alreadyReadNotifyLater'] = (new Date()).getTime() + 10 * 60 * 1000; //10分後
+                            });
+                        }),
+                        $('&lt;input type="button" value="Close (完了)" style="margin-left: 60px; font-size: larger; padding: 10px; background-color: darkblue; color: white;">').click(() => {
+                            $('#chex-notify').hide();
+                            ChEx.storage.saveLocal(storageKey, {}, data => {
+                                data['alreadyReadNotify'] = list[list.length - 1].ymd;
+                            });
+                        }),
+                        `&lt;div style="margin-left: 60px; font-size: larger;">連絡先: ${ChEx.inquiryLink()}&lt;/div>`
+                    )
+                )
+            );
+        }
+    });
+};</code></pre></li>
+            <li><b>既読処理をどうやってるのか</b></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.info('●●の改造', 'wataru.terada@accenture.com', '寺田 渉');
+    ChEx.notify('example08.notify', [
+        { ymd: '2017-06-17 (v1.22)', htmls: ['通知する機能を追加しました。今後、新機能を追加した際にはこの機能でお知らせします。',
+            '【重要】Timeレポートのプルダウンで絞り込みできるようにしました。キー入力することでリストが絞り込まれます。BSキーで絞り込み文字を削除できます。',
+            '【重要】Taxi のテンプレート保存機能は作ったものの、いまいち便利さが判らないわりにメンテが大変なので削除することにしました。もし困るという人がいましたらすぐに連絡ください。']},
+        { ymd: '2017-06-26 (v1.23)', htmls: ['【バグFIX】新規作成ページの場合に時間転記のリンクが出なかったので修正しました。']},
+    ]);
+});</code></pre>
+</div>
+
+
+<div id="example09">
+    <h2>9. Storage の内容をメンテしやすく</h2>
+    <div style="max-width: 1000px;">
+        <form>
+            <div style="display: flex; height: 150px;">
+                <div class="ope-storage-array"  data-col-rate="4" data-storage="example01.templates" data-title="example01.templates"></div>
+                <div class="ope-storage-object" data-col-rate="1" data-storage="example02.sums" data-title="example02.sums"></div>
+            </div>
+            <div style="display: flex; height: 100px;">
+                <div class="ope-storage-object" data-col-rate="2" data-storage="example07.comments" data-title="example07.comments"></div>
+                <div class="ope-storage-object" data-col-rate="2" data-storage="example08.notify" data-title="example08.notify"></div>
+            </div>
+        </form>
+        <script src="../src/ope-storage.js"></script>
+    </div>
+    <script>$(function () {
+        example('example09');
+    })</script>
+    <div class="example-points">
+        <ul>
+            <li><b>ope-storage.js</b> … Storageを管理する画面を簡単に作るためのもの<pre><code>$(function () {
+    $('.ope-storage-object,.ope-storage-array').each(function () {
+        let $div = $(this);
+        let STORAGE_KEY = $div.attr('data-storage');
+        let IS_ARRAY_TYPE = $div.is('.ope-storage-array');
+        let TITLE = $div.attr('data-title');
+        let COL_RATE = $div.attr('data-col-rate');
+        let isJson = location.href.match(/json=(1|true)/);
+        $div.css({ margin: '2px', flex: COL_RATE, marginBottom: '20px' });
+        $div.append(
+            `&lt;div style="height: 30px; display: flex; align-items: flex-end;">${TITLE || STORAGE_KEY}&lt;/div>`,
+            `&lt;textarea style="width: 100%; height: calc(100% - 40px);">&lt;/textarea>`
+        );
+        let $textarea = $div.find('textarea');
+        if (isJson) {
+            ChEx.storage.loadLocal(STORAGE_KEY, null, data => {
+                if (data !== null) {
+                    let text = JSON.stringify(data);
+                    $textarea.val(text);
+                }
+            });
+        } else if (IS_ARRAY_TYPE) {
+            ChEx.storage.loadLocal(STORAGE_KEY, [], data => {
+                if (!$.isArray(data)) throw new Error(`${STORAGE_KEY} が ope-storage-array で参照されましたが、これは配列ではありません。`);
+                data = data.map(v => v.replace(/\n/g, '\\n'));
+                let text = data.join("\n");
+                $textarea.val(text);
+            });
+        } else {
+            ChEx.storage.loadLocal(STORAGE_KEY, {}, data => {
+                if ($.isArray(data)) throw new Error(`${STORAGE_KEY} が ope-storage-array で参照されていませんが、これは配列です。`);
+                let text = Object.keys(data).sort().map(key => `${key}: ${data[key]}`.replace(/\n/g, '\\n')).join("\n");
+                $textarea.val(text);
+            });
+        }
+        //noinspection JSUnresolvedFunction
+        $div.find('textarea').change(function () {
+            if (!confirm('データが変更されました。保存しますか？')) {
+                location.reload(); //元に戻す
+                return;
+            }
+            if (isJson) {
+                let data = $textarea.val();
+                if (data) {
+                    data = JSON.parse(data);
+                    ChEx.storage.saveLocalDirectly(STORAGE_KEY, data, () => location.reload());
+                } else {
+                    ChEx.storage.removeLocal(STORAGE_KEY, () => location.reload());
+                }
+            } else if (IS_ARRAY_TYPE) {
+                let data = $textarea.val().trim().split("\n").map(v => v.trim().replace(/\\n/g, "\n"));
+                ChEx.storage.saveLocalDirectly(STORAGE_KEY, data, () => location.reload());
+            } else {
+                let data = {};
+                $textarea.val().replace(/^([^:]+):\s*(.*?)\s*$/gm, (hit, key, val) => {
+                    data[key] = val.replace(/\\n/g, "\n");
+                });
+                ChEx.storage.saveLocalDirectly(STORAGE_KEY, data, () => location.reload());
+            }
+        });
+    });
+});</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>&lt;!-- option.html -->
+
+&lt;meta charset="UTF-8">
+&lt;h1>Option&lt;/h1>
+&lt;form>
+    &lt;div style="display: flex; height: 500px;">
+        &lt;div class="ope-storage-array"  data-col-rate="1" data-storage="example01.templates" data-title="example01.templates">&lt;/div>
+        &lt;div class="ope-storage-object" data-col-rate="2" data-storage="example02.sums"      data-title="example02.sums">&lt;/div>
+    &lt;/div>
+    &lt;div style="display: flex; height: 300px;">
+        &lt;div class="ope-storage-object" data-col-rate="1" data-storage="example07.comments" data-title="example07.comments">&lt;/div>
+        &lt;div class="ope-storage-object" data-col-rate="1" data-storage="example08.notify"   data-title="example08.notify">&lt;/div>
+    &lt;/div>
+&lt;/form>
+&lt;script src="jquery-2.2.0.min.js">&lt;/script>
+&lt;script src="ChEx.js">&lt;/script>
+&lt;script src="ope-storage.js">&lt;/script>
+</code></pre>
+    <a href="#" id="example09-json"></a>
+    <script>
+        $(function () {
+            let $json = $('#example09-json');
+            ChEx.toggleUrlParamLink('json', '1', reverseUrl => {
+                $json.text('jsonモードをやめる').attr('href', reverseUrl);
+            }, reverseUrl => {
+                $json.text('jsonモードにする').attr('href', reverseUrl);
+            });
+        })
+    </script>
+</div>
+
+
+<div id="example10">
+    <h2>10. gmail の宛名をドメインごとにまとめる</h2>
+    説明しやすいように抜粋してます
+    <div role="dialog" aria-labelledby="この属性の存在で判断">
+        <div class="aoC">
+            <div class="fX aXjCH">
+                <table class="GS">
+                    <tbody>
+                    <tr>
+                        <td class="ok"><div class="o1"><span class="gO aQY" role="link">To</span></div></td>
+                        <td class="eV">
+                            <div class="oj">
+                                <div class="wO nr">
+                                    <div class="vR"><span class="vN bfK a3q" email="test2-1@ex.jp"><div class="vT">例2-1 (test2-1@ex.jp)</div><div class="vM"></div></span><input name="to" type="hidden" value="&quot;例2-1&quot; <test2-1@ex.jp>"></div>
+                                    <div class="vR"><span class="vN bfK a3q" email="test2-2@exe.jp"><div class="vT">例2-2 (test2-2@exe.jp)</div><div class="vM"></div></span><input name="to" type="hidden" value="&quot;例2-2&quot; <test2-2@exe.jp>"></div>
+                                    <div class="vR"><span class="vN bfK a3q" email="test2-3@ex.jp"><div class="vT">例2-3 (test2-3@ex.jp)</div><div class="vM"></div></span><input name="cc" type="hidden" value="&quot;例2-3&quot; <test2-3@ex.jp>"></div>
+                                    <div class="vR"><span class="vN bfK a3q" email="test2-4@ex.jp"><div class="vT">例2-4 (test2-4@ex.jp)</div><div class="vM"></div></span><input name="bcc" type="hidden" value="&quot;例2-4&quot; <test2-4@ex.jp>"></div>
+                                    <textarea rows="1" class="vO" name="to" aria-label="To" role="combobox" style="width: 49px;"></textarea>
+                                    <div class="aA6"></div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+            <hr>
+            <div class="aDh">
+                <div class="J-J5-Ji">
+                    <div id class="T-I J-J5-Ji aoO T-I-atl L3" role="button" tabindex="1" style="user-select: none;" onclick="alert('${num}. 送信しました')">送信</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <style>
+        #example10 table.GS, #example10 table.GS td { border: none; }
+    </style>
+    <script>
+        example('example10', function () {
+            ChEx.onChangeDom($('body'), function () {
+                //既存のボタン検索
+                $(`div[id][role='button']:contains('送信')`).each(function () {
+                    let $sendButton = $(this);
+                    let $parent = $sendButton.parent();
+                    if ($parent.children('.chex-gmail-btn-confirm').length) return; //確認ボタンがまだ無い場合のみ
+                    //送信ボタン非表示
+                    $sendButton.hide();
+                    //確認ボタン作成
+                    let $confirmButton = $(`<div class="T-I J-J5-Ji aoO T-I-KE L3 chex-gmail-btn-confirm">確認</div>`);
+                    $confirmButton.on("click", function () {
+                        //メール書き込みエリアを探す
+                        let $dialogMail = $confirmButton.closest(`div[role='dialog'][aria-labelledby]`); //とりあえずダイアログ形式のみ
+                        //確認ダイアログ表示
+                        let dialog = ChEx.dialog({
+                            title: '宛先を確認してください。',
+                            css: { width: '600px' },
+                            makeBody: function() {
+                                let sender_map = {};
+                                for (let key of ['to', 'cc', 'bcc']) {
+                                    //情報収集
+                                    let addrAry = $dialogMail.find(`input[name="${key}"]`).get().map(input => $(input).val());
+                                    //アドレスをドメインごとに振り分ける
+                                    for (let addr of addrAry) {
+                                        let domain = addr;
+                                        domain = domain.replace( /\s/g , "" ); //空欄は撤去
+                                        domain = domain.replace( /("|&quot;).*?("|&quot;)/g , "" ); //"～" は撤去
+                                        domain = domain.replace( /^.*(?:<|&lt;)(.*?)(?:>|&gt;).*$/ , '$1' );   //<～> ならその中身がメアド
+                                        if (!domain) return false;
+                                        domain = domain.replace( /^.*?@/ , "@" );
+                                        domain = domain.toLowerCase();
+                                        //マップに登録
+                                        if ( ! sender_map[domain] ) {
+                                            sender_map[domain] = [];
+                                        }
+                                        sender_map[domain].push( ChEx.h(addr) );
+                                    }
+                                }
+                                return $(`
+                                <div>
+                                    ${Object.keys(sender_map).sort().map(domain => `
+                                        <div class="chex-gmail-checkable" style="padding: 2px; margin: 20px 0; background-color: #DDDDDD; font-family: monospace;">
+                                        <div style="margin: 0; padding: 2px; font-weight: bold; font-size: large;">${domain}</div>
+                                        <div style="margin: 0; padding: 2px; background-color: white; line-height: 1.2;">${sender_map[domain].sort().join("<br/>\n")}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                `);
+                            },
+                        });
+                        dialog.open();
+                        dialog.addButton('送信', () => {
+                            dialog.close();
+                            $sendButton.click();
+                        });
+                    });
+                    $sendButton.before($confirmButton);
+                });
+            });
+        });
+    </script>
+    <br/>
+    <div class="example-points">
+        <ul>
+            <li><b>ChEx.onChangeDom()</b> … 下位のDOMが変更されたら<pre><code>/** 下位のDOMが変更されたら */
+ChEx.onChangeDom__timeoutId = 0;
+ChEx.onChangeDom = function ($root, callback) {
+    $root.on("DOMNodeInserted DOMSubtreeModified", function () {
+        if (ChEx.onChangeDom__timeoutId) return true; //動いていたらやらない
+        ChEx.onChangeDom__timeoutId = setTimeout(function () {
+            try {
+                callback($root);
+            } finally {
+                ChEx.onChangeDom__timeoutId = 0;
+            }
+            return true;
+        }, 100);
+    });
+};</code></pre></li>
+            <li><b>ChEx.h()</b> … htmlエスケープ<pre><code>ChEx.h = function (str) {
+    str = str.replace(/&/g, "&amp;");
+    str = str.replace(/"/g, "&quot;");
+    str = str.replace(/'/g, "&#039;");
+    str = str.replace(/</g, "&lt;");
+    str = str.replace(/>/g, "&gt;");
+    return str;
+};</code></pre></li>
+            <li><b>下位のDOMの変更検出</b></li>
+            <li><b>ドメインごとにまとめる</b></li>
+            <li><b>gmailからアドレス取る</b></li>
+        </ul>
+    </div>
+    <pre><code>// content_script.js
+
+$(function () {
+    ChEx.onChangeDom($('body'), function () {
+        //既存のボタン検索
+        $(`div[id][role='button']:contains('送信')`).each(function () {
+            let $sendButton = $(this);
+            let $parent = $sendButton.parent();
+            if ($parent.children('.chex-gmail-btn-confirm').length) return; //確認ボタンがまだ無い場合のみ
+            //送信ボタン非表示
+            $sendButton.hide();
+            //確認ボタン作成
+            let $confirmButton = $(`&lt;div class="T-I J-J5-Ji aoO T-I-KE L3 chex-gmail-btn-confirm" role="button" tabindex="1" style="-webkit-user-select: none;">確認&lt;/div>`);
+            $confirmButton.on("click", function () {
+                //メール書き込みエリアを探す
+                let $dialogMail = $confirmButton.closest(`div[role='dialog'][aria-labelledby]`); //とりあえずダイアログ形式のみ
+                //確認ダイアログ表示
+                let dialog = ChEx.dialog({
+                    title: '宛先を確認してください。',
+                    css: { width: '600px' },
+                    makeBody: function() {
+                        let sender_map = {};
+                        for (let key of ['to', 'cc', 'bcc']) {
+                            //情報収集
+                            let addrAry = $dialogMail.find(`input[name="${key}"]`).get().map(input => $(input).val());
+                            //アドレスをドメインごとに振り分ける
+                            for (let addr of addrAry) {
+                                let domain = addr;
+                                domain = domain.replace( /\s/g , "" ); //空欄は撤去
+                                domain = domain.replace( /("|&quot;).*?("|&quot;)/g , "" ); //"～" は撤去
+                                domain = domain.replace( /^.*(?:&lt;|&lt;)(.*?)(?:>|&gt;).*$/ , '$1' );   //&lt;～> ならその中身がメアド
+                                if (!domain) return false;
+                                domain = domain.replace( /^.*?@/ , "@" );
+                                domain = domain.toLowerCase();
+                                //マップに登録
+                                if ( ! sender_map[domain] ) {
+                                    sender_map[domain] = [];
+                                }
+                                sender_map[domain].push( ChEx.h(addr) );
+                            }
+                        }
+                        return $(`
+                            &lt;div>
+                                ${Object.keys(sender_map).sort().map(domain => `
+                                    &lt;div class="chex-gmail-checkable" style="padding: 2px; margin: 20px 0; background-color: #DDDDDD; font-family: monospace;">
+                                    &lt;div style="margin: 0; padding: 2px; font-weight: bold; font-size: large;">${domain}&lt;/div>
+                                    &lt;div style="margin: 0; padding: 2px; background-color: white; line-height: 1.2;">${sender_map[domain].sort().join("&lt;br/>\n")}&lt;/div>
+                                    &lt;/div>
+                                `).join('')}
+                            &lt;/div>
+                        `);
+                    },
+                });
+                dialog.open();
+                dialog.addButton('送信', () => {
+                    dialog.close();
+                    $sendButton.click();
+                });
+            });
+            $sendButton.before($confirmButton);
+        });
+    });
+});</code></pre>
+    ちなみに <a href="https://chrome.google.com/webstore/detail/pre-sending-checker-for-g/amfjacgcdefoiliginkjnebdamdomeig" target="_blank">「Gmail送信前チェッカー」完全版はこちらで公開しています。</a><br/>
+</div>
+
+
+<div id="example11">
+    <h2>11. 単体テスト</h2>
+    <h3>ChEx.padding()</h3>
+    <div id="example11-result"></div>
+    <script>
+        example('example11', function () {
+            unitTest($('#example11-result'), test => {
+                test('ChEx.padding(1234567)           ', assert => assert(ChEx.padding(1234567), '1,234,567'));
+                test('ChEx.padding(1, 3)              ', assert => assert(ChEx.padding(1, 3), '  1'));
+                test('ChEx.padding(1, -3)             ', assert => assert(ChEx.padding(1, -3), '1  '));
+                test('ChEx.padding("a", 3)            ', assert => assert(ChEx.padding("a", 3), '  a'));
+                test('ChEx.padding("a", -3)           ', assert => assert(ChEx.padding("a", -3), 'a  '));
+                test('ChEx.padding(1, 3, "0")         ', assert => assert(ChEx.padding(1, 3, "0"), '001'));
+                test('ChEx.padding(0.12345, 6, "0", 2)', assert => assert(ChEx.padding(0.12345, 6, '0', 2), '000.12'));
+            });
+        });
+    </script>
+    <div class="example-points">
+        <ul>
+            <li><b>ChEx.padding()</b> … 数値や文字列のパディングや桁区切りなどのフォーマット。<pre><code>/**
+ * ３桁区切り＆パディング＆左右寄せ
+ * @param num     - 数値なら３桁区切り。文字列でもいい
+ * @param length  - (省略可)この桁数までパディングする。マイナスなら左寄せ
+ * @param char    - (省略可)パディングで埋める文字。デフォルトは空白
+ * @param decimal - (省略可)表示させたい小数桁
+ */
+ChEx.padding = function (num, length, char, decimal) {
+    if (!num.replace) { //文字列か
+        if (decimal) {
+            num = num.toLocaleString('ja-JP', { minimumFractionDigits: decimal, maximumFractionDigits: decimal });
+        } else {
+            num = num.toLocaleString();
+        }
+    }
+    if (length) {
+        char = char || ' ';
+        if (length > 0) {
+            num = char.repeat(length) + num;
+            num = num.slice(-length);
+        } else {
+            num = num + char.repeat(-length);
+            num = num.slice(0, -length);
+        }
+    }
+    return num;
+};</code></pre></li>
+            <li><b>unitTest()</b> … 簡易的な単体テスト<pre><code>function unitTest($appendTo, callback) {
+    let $parent = $('&lt;ul>&lt;/ul>');
+    $appendTo.append(
+        $('&lt;pre>&lt;/pre>').append(
+            $parent
+        )
+    );
+    const test = (title, callback) => {
+        let $result;
+        let $case = $(`&lt;li style="color: red;">&lt;/li>`).append(
+            ChEx.h(title),
+            ' ... ',
+            $result = $('&lt;span>&lt;/span>')
+        );
+        $parent.append($case);
+        let $sandbox = $('&lt;div>&lt;/div>').appendTo($case).hide();
+        const assert = (actual, expected) => {
+            if (actual === expected) {
+                $case.css('color', 'green');
+                $result.text('OK');
+            } else {
+                $result.text(`Error! Expected '${expected}', but '${actual}'`);
+            }
+            $sandbox.remove();
+        };
+        try {
+            callback(assert, $sandbox);
+        } catch (e) {
+            $result.text(e.message);
+            $sandbox.remove();
+        }
+    };
+    callback(test);
+}</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>// test.html
+&lt;script src="../src/jquery-2.2.0.min.js">&lt;/script>
+&lt;script src="../src/ChEx.js">&lt;/script>
+&lt;script src="test-helper.js">&lt;/script>
+&lt;script>
+$(function () {
+    unitTest($('#test-result'), test => {
+        test('ChEx.padding(1234567)           ', assert => assert(ChEx.padding(1234567)           , '1,234,567'));
+        test('ChEx.padding(1, 3)              ', assert => assert(ChEx.padding(1, 3)              , '  1'));
+        test('ChEx.padding(1, -3)             ', assert => assert(ChEx.padding(1, -3)             , '1  '));
+        test('ChEx.padding("a", 3)            ', assert => assert(ChEx.padding("a", 3)            , '  a'));
+        test('ChEx.padding("a", -3)           ', assert => assert(ChEx.padding("a", -3)           , 'a  '));
+        test('ChEx.padding(1, 3, "0")         ', assert => assert(ChEx.padding(1, 3, "0")         , '001'));
+        test('ChEx.padding(0.12345, 6, "0", 2)', assert => assert(ChEx.padding(0.12345, 6, '0', 2), '000.12'));
+    });
+});
+&lt;/script>
+</code></pre>
+    <a href="test.html" target="_blank">その他のテスト</a><br/>
+</div>
+
+
+<div id="example12">
+    <h2>12. 結合テスト</h2>
+    <script>$(function () {
+        example('example12');
+    })</script>
+    <div class="example-points">
+        <ul>
+            <li><b>example()</b> … 結合テスト（このファイル）<pre><code>function example(testId, callback) {
+    $(function () {
+        let $test = $(`#${testId}`);
+        let params = ChEx.urlParams();
+        let on = (params.on === '1' && params['#'] === testId);
+        params.on = (on ? '0' : '1');
+        params.test = testId;
+        params['#'] = testId;
+        $test.find('h2').append(
+            $(`&lt;a href="${ChEx.makeUrl(params)}">拡張を${on ? '無' : '有'}効化&lt;/a>`).css({
+                marginLeft: '20px',
+                fontSize: 'smaller',
+                fontWeight: 'normal'
+            })
+        );
+        if (on) callback($test);
+    });
+}</code></pre></li>
+        </ul>
+    </div>
+    <pre><code>&lt;script src="../src/jquery-2.2.0.min.js">&lt;/script>
+&lt;script src="../src/ChEx.js">&lt;/script>
+&lt;script src="test-helper.js">&lt;/script>
+
+&lt;div id="example01">
+    &lt;h2>1. 入力内容をテンプレとして保存する&lt;/h2>
+    &lt;form>
+        &lt;div>&lt;span>タイトル: &lt;/span>&lt;input type="text" name="a">&lt;/div>
+        &lt;div>&lt;span>種別: &lt;/span>&lt;input type="radio" name="b" value="1">出退勤 &lt;input type="radio" name="b" value="2">非出退勤&lt;/div>
+        &lt;div>&lt;span>乗り物: &lt;/span>&lt;input type="checkbox" name="c" value="1">JR &lt;input type="checkbox" name="c" value="2">地下鉄&lt;/div>
+        &lt;div>&lt;span>プロジェクト: &lt;/span>&lt;select name="d">&lt;option>&lt;option value="1">○○PROJ&lt;option value="2">△△PROJ&lt;/select>&lt;/div>
+        &lt;div>&lt;span>メンバー: &lt;/span>&lt;select name="e" multiple size="4">&lt;option value="100001">Aさん&lt;option value="100002">Bさん&lt;option value="100003">Cさん&lt;option value="100004">Dさん&lt;/select>&lt;/div>
+        &lt;div>&lt;span>備考: &lt;/span>&lt;textarea name="f" rows="3">&lt;/textarea>&lt;/div>
+    &lt;/form>
+    &lt;script>
+        example('example01', function () {
+            //あらかじめ保存されているのを再現
+            ChEx.storage.saveLocal('example01.templates', [], templates => {
+                if (templates.length) return;
+                templates.push("家→会社１\t交通費（家→会社１）\t1\t2\t1\t100001,100003\t改行→\n←改行");
+                templates.push("会社１→会社２\t交通費（会社１→会社２）\t2\t1,2\t2\t100002,100004\t改行を\n含むメモ");
+            });
+            //テンプレート保存機能
+            ChEx.templateStorage({
+                storageKey: 'example01.templates',
+                init: $opener => $opener.appendTo('#example01 form'),
+                inputs: [
+                    '#example01 [name="a"]',
+                    '#example01 [name="b"]',
+                    '#example01 [name="c"]',
+                    '#example01 [name="d"]',
+                    '#example01 [name="e"]',
+                    '#example01 [name="f"]',
+                ],
+                title: 'テンプレートから選択',
+            });
+        });
+    &lt;/script>
+&lt;/div>
+</code></pre>
+</div>
+
+
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+<div id="example-toggle-actions"></div>
+<script>
+    $(function () {
+        let $code, $presentation;
+        $('#example-toggle-actions').append(
+            $code = ChEx.clickableLink(''),
+            '<br/>',
+            $presentation = ChEx.clickableLink(''),
+            '<br/>',
+        );
+        ChEx.toggleUrlParamLink('example-code', '0', reverseUrl => {
+            $('pre').hide();
+            $code.text('コードを表示する').attr('href', reverseUrl);
+        }, reverseUrl => {
+            $code.text('コードを非表示にする').attr('href', reverseUrl);
+        });
+
+        ChEx.toggleUrlParamLink('presentation', '1', reverseUrl => {
+            presentation();
+            $presentation.text('プレゼンモードをやめる').attr('href', reverseUrl);
+        }, reverseUrl => {
+            $presentation.text('プレゼンモードにする').attr('href', reverseUrl);
+        });
+
+        $('div.example-points li > pre').parent('li').append('<span class="example-opener">▼</span>').click(function () {
+            let $this = $(this);
+            let $opener = $this.find('.example-opener');
+            if ($opener.text() === '▼') {
+                $opener.text('▲');
+            } else {
+                $opener.text('▼');
+            }
+            $this.find('pre').toggle();
+            $('body').scrollTop($this.closest('li').position().top);
+        });
+        $(this).find('pre').click(e => e.stopPropagation());
+    });
+</script>
+</body>
+</html>

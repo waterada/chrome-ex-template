@@ -1,0 +1,222 @@
+#test10 h2 { margin-top: 40px; margin-bottom: 0; }
+
+/* ------------ 送信ボタン */
+.aDh {
+    background-color: #f5f5f5;
+    border: 1px solid #cfcfcf;
+    border-width: 0 1px 1px 1px;
+    height: 42px;
+    margin: 0 -1px;
+    overflow-y: hidden;
+}
+.aoO {
+    margin: 6px 2px;
+    vertical-align: middle;
+}
+.T-I {
+    -webkit-border-radius: 2px;
+    border-radius: 2px;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    white-space: nowrap;
+    margin-right: 16px;
+    height: 27px;
+    line-height: 27px;
+    min-width: 54px;
+    outline: 0;
+    padding: 0 8px;
+}
+.J-J5-Ji {
+    display: inline-block;
+}
+.T-I-KE {
+    background-color: #d14836;
+    background-image: -webkit-linear-gradient(top, #dd4b39, #d14836);
+    background-image: linear-gradient(top, #dd4b39, #d14836);
+    background-image: -webkit-linear-gradient(to bottom, #dd4b39, #d14836);
+    background-image: linear-gradient(to bottom, #dd4b39, #d14836);
+    border: 1px solid transparent;
+    color: #fff;
+}
+
+/* ------------ 赤いボタン */
+.T-I-atl {
+    -webkit-box-shadow: none;
+    box-shadow: none;
+    background-color: #4d90fe;
+    background-image: -webkit-linear-gradient(top,#4d90fe,#4787ed);
+    border: 1px solid #3079ed;
+    color: #fff;
+}
+
+/* ------------ 連絡先 */
+.ok { /* toなどのラベル */
+    padding: 7px 2px 1px 4px;
+    vertical-align: top;
+}
+.gO {
+    color: #777;
+    font-size: 14px;
+    text-align: left;
+    white-space: nowrap;
+}
+.oj {
+    margin: 0 0 1px 0;
+}
+
+.oj .l1 {
+    margin: 0;
+    border: 0!important;
+    -webkit-box-shadow: none;
+    -webkit-box-shadow: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+.oj .nr {
+    margin: 0;
+    border: 0 !important;
+    padding: 0;
+}
+
+.nr:focus, .l1, .Ao {
+    -webkit-box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    border: 1px solid #4d90fe !important;
+    -webkit-transition: all 0s;
+    transition: all 0s;
+    margin: 1px !important;
+}
+
+.nr, .Ar {
+    border: 1px solid #d9d9d9 !important;
+    border-top: 1px solid #c0c0c0 !important;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+    -webkit-border-radius: 1px;
+    border-radius: 1px;
+    -webkit-transition: none;
+    transition: none;
+    margin: 1px !important;
+    padding: 3px 1px 3px 3px;
+}
+
+.nr:focus, .l1, .dI:focus {
+    border: 2px solid #ffc !important;
+    margin: 0 !important;
+    outline: 0 !important;
+}
+
+.nr {
+    padding: 3px 0 3px 3px;
+    margin: 1px;
+}
+
+.dF .dG, .nr, .Ar {
+    border: 1px solid;
+    border-color: #666666 #ccc #ccc #ccc;
+    background-color: #fff;
+    color: #222;
+}
+
+.wO {
+    background-color: #fff;
+    overflow: hidden;
+}
+
+.oj .vR {
+    padding-top: 2px;
+}
+
+.vR {
+    font-size: 14px;
+    display: inline-block;
+    padding: 3px;
+    vertical-align: top;
+}
+
+.vN {
+    background-color: #f5f5f5;
+    border: 1px solid #d9d9d9;
+    cursor: default;
+    display: block;
+    height: 20px;
+    white-space: nowrap;
+    -webkit-border-radius: 3px;
+    border-radius: 3px;
+}
+
+.vT {
+    display: inline-block;
+    color: #222;
+    margin: 2px 5px;
+    max-width: 325px;
+    max-height: 17px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: ltr;
+    cursor: move;
+}
+
+.vM {
+    display: inline-block;
+    width: 14px;
+    height: 20px;
+    background: no-repeat url(//ssl.gstatic.com/apps/gadgets/contactarea/contactarea_sprite_2.gif) -4px 0;
+    opacity: .6;
+    vertical-align: top;
+    cursor: pointer;
+}
+
+.oj .vO {
+    padding-bottom: 3px;
+    padding-top: 5px;
+}
+
+.vO {
+    text-align: left;
+    height: 16px!important;
+    overflow: hidden;
+    padding: 6px 3px;
+    resize: none;
+    width: 40px;
+    color: black;
+    background-color: white;
+}
+
+.xi, .vO, .vO:focus {
+    font-size: 14px;
+    border: 0!important;
+    margin: 0!important;
+    outline: none;
+    -webkit-box-shadow: none;
+    box-shadow: none;
+}
+
+.oj .aA6 {
+    padding-top: 4px;
+}
+.aA6 {
+    float: right;
+}
+
+/* ------------ 見た目を実物に近づける */
+.aoC {
+    box-shadow: rgba(0,0,0,0.2) 0 2px 6px;
+    border: 1px solid #cfcfcf;
+    border-top: 36px solid black;
+    width: 510px;
+}
+.gA.gt .fX.aXjCH {
+    border-bottom: 1px solid #cfcfcf;
+}
+#test10 hr {
+    border: none;
+    border-bottom: 1px solid #cfcfcf;
+    margin: 0;
+}
+.aDh {
+    padding-left: 4px;
+}
+

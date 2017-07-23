@@ -6,5 +6,10 @@
   "content_scripts": [{
     "matches": ["https://github.com/waterada/chrome-ex-template/*"],
     "js": ["jquery-2.2.0.min.js", "ChEx.js", "content_script.js"]
-  }]
+  }],
+  "options_page": "options.html",
+  "permissions": [
+    "https://github.com/waterada/chrome-ex-template/*",
+    "storage"
+  ]
 }

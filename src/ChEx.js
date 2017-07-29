@@ -490,6 +490,7 @@ ChEx.dialog = function (opt) {
     if (ChEx.__dialog_opened) return;
     ChEx.__dialog_opened = true;
     let $dialog, $back, $message;
+    let buttons = [];
     const dialog = {
         open: () => {
             $('body').append(
@@ -550,7 +551,20 @@ ChEx.dialog = function (opt) {
             $(document).on('keydown.chex-dialog', function (e) {
                 if (e.which === 27) dialog.close();
             });
-            dialog.addButton('Cancel', () => dialog.close());
+            for (let button of buttons) {
+                $dialog.find('.chex-dialog-buttons').append(
+                    $('<button></button>').text(button.label).click(button.onClick).css({
+                        border: '1px solid #c5c5c5',
+                        borderRadius: '3px',
+                        padding: '.4em 1em',
+                        color: '#454545',
+                        background: button.bgColor || '#f6f6f6',
+                        fontSize: '1em',
+                        cursor: 'pointer',
+                        marginRight: '10px',
+                    })
+                );
+            }
         },
         close: () => {
             $dialog.remove();
@@ -560,20 +574,10 @@ ChEx.dialog = function (opt) {
             ChEx.__dialog_opened = false;
         },
         addButton: (label, onClick, bgColor) => {
-            $dialog.find('.chex-dialog-buttons').append(
-                $('<button></button>').text(label).click(onClick).css({
-                    border: '1px solid #c5c5c5',
-                    borderRadius: '3px',
-                    padding: '.4em 1em',
-                    color: '#454545',
-                    background: bgColor || '#f6f6f6',
-                    fontSize: '1em',
-                    cursor: 'pointer',
-                    marginRight: '10px',
-                })
-            );
+            buttons.push({ label, onClick, bgColor });
         },
     };
+    dialog.addButton('Cancel', () => dialog.close());
     return dialog;
 };
 

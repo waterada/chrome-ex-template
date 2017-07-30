@@ -487,14 +487,16 @@ ChEx.__dialog_opened = false;
  * @param opt.onClose
  */
 ChEx.dialog = function (opt) {
-    if (ChEx.__dialog_opened) return;
-    ChEx.__dialog_opened = true;
     let $dialog, $back, $message;
     let buttons = [];
     const dialog = {
         open: () => {
-            $('body').append(
-                $dialog = $('<div></div>').css(Object.assign({
+            if (ChEx.__dialog_opened) return;
+            ChEx.__dialog_opened = true;
+            let $body = $('body');
+            $body.find('.chex-dialog').remove();
+            $body.append(
+                $dialog = $('<div class="chex-dialog"></div>').css(Object.assign({
                     position: 'absolute',
                     height: 'auto',
                     width: '600px',
@@ -527,7 +529,7 @@ ChEx.dialog = function (opt) {
                         $('<div class="chex-dialog-buttons" style="margin-top: 10px;"></div>')
                     )
                 ),
-                $back = $('<div></div>').css({
+                $back = $('<div class="chex-dialog"></div>').css({
                     zIndex: 2147483646,
                     background: '#aaa',
                     opacity: '.3',
@@ -538,7 +540,7 @@ ChEx.dialog = function (opt) {
                     height: '100%',
                 })
             );
-            if (opt.onOpen) opt.onOpen();
+            if (opt.onOpen) opt.onOpen($message);
             $message.scrollTop(0); //スクロールが出る場合、ボタン(末尾)にフォーカスが行ってしまうので、これで先頭に戻す
             let $window = $(window);
             let ww = $window.width();

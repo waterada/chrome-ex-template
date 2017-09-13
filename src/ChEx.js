@@ -554,8 +554,9 @@ ChEx.dialog = function (opt) {
                 if (e.which === 27) dialog.close();
             });
             for (let button of buttons) {
+                let $btn;
                 $dialog.find('.chex-dialog-buttons').append(
-                    $('<button></button>').text(button.label).click(button.onClick).css({
+                    $btn = $('<button></button>').text(button.label).click(button.onClick).css({
                         border: '1px solid #c5c5c5',
                         borderRadius: '3px',
                         padding: '.4em 1em',
@@ -566,6 +567,11 @@ ChEx.dialog = function (opt) {
                         marginRight: '10px',
                     })
                 );
+                if (button.attrs) {
+                    for (let key of Object.keys(button.attrs)) {
+                        $btn.attr(key, button.attrs[key]);
+                    }
+                }
             }
         },
         close: () => {
@@ -575,8 +581,8 @@ ChEx.dialog = function (opt) {
             if (opt.onClose) opt.onClose();
             ChEx.__dialog_opened = false;
         },
-        addButton: (label, onClick, bgColor) => {
-            buttons.push({ label, onClick, bgColor });
+        addButton: (label, onClick, bgColor, attrs) => {
+            buttons.push({ label, onClick, bgColor, attrs });
         },
     };
     dialog.addButton('Cancel', () => dialog.close());

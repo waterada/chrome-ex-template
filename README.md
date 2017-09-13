@@ -14,3 +14,9 @@ Chrome拡張の雛形
 - [サンプルページ](https://waterada.github.io/chrome-ex-template/test/example.html)
 - [ChEx.js のドキュメント](ChEx-doc.md)
 - [単体テスト](https://waterada.github.io/chrome-ex-template/test/test.html)
+
+
+License
+-----------------------------------
+
+MIT
